@@ -47,6 +47,11 @@ export type ProcessedFile = {
  * that should be fetched and included when processing files. The file is fetched
  * from the provided URL and processed as a {@link ProcessedFile}.
  *
+ * Note: Uses PascalCase naming for consistency with {@link FileData}, even though
+ * this type is created internally rather than received from an external API. This
+ * unified naming convention makes it clear that both types work together in the
+ * file handling workflow.
+ *
  * @see {@link FileData} for files from compute responses
  * @see {@link processFiles} for how FileBaseInfo is processed (fetched and converted)
  */
