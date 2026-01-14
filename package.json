@@ -6,11 +6,10 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/vektornode/selva.git",
-		"directory": "packages/compute"
+		"url": "git+https://github.com/TheVessen/selva-compute.git"
 	},
-	"bugs": "https://github.com/vektornode/selva/issues",
-	"homepage": "https://github.com/vektornode/selva/tree/main/packages/compute",
+	"bugs": "https://github.com/TheVessen/selva-compute/issues",
+	"homepage": "https://github.com/TheVessen/selva-compute#readme",
 	"type": "module",
 	"keywords": [
 		"compute",
@@ -79,8 +78,8 @@
 		"test": "vitest",
 		"test:watch": "vitest watch",
 		"type-check": "tsc --noEmit",
-		"gen:types": "node ./scripts/generate-types-from-rst.js",
-		"playground": "pnpm exec tsx scripts/playground.ts"
+		"prepublishOnly": "pnpm build",
+		"release": "pnpm build && changeset publish"
 	},
 	"dependencies": {
 		"compute-rhino3d": "0.13.0-beta",
@@ -96,9 +95,22 @@
 		}
 	},
 	"devDependencies": {
-		"@selva/config": "workspace:*",
+		"@changesets/cli": "^2.29.8",
+		"@eslint/js": "^9.39.2",
+		"@types/node": "^25.0.8",
+		"@types/three": "^0.182.0",
 		"esbuild-plugin-file-path-extensions": "^2.1.4",
+		"eslint": "^9.39.2",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.14.0",
+		"globals": "^17.0.0",
+		"prettier": "^3.7.4",
+		"prettier-plugin-svelte": "^3.4.1",
+		"prettier-plugin-tailwindcss": "^0.7.2",
+		"svelte": "^5.46.3",
+		"three": "^0.182.0",
 		"tsup": "^8.5.0",
+		"typescript-eslint": "^8.53.0",
 		"vitest": "^3.2.4"
 	}
 }
