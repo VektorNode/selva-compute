@@ -1,0 +1,20 @@
+{
+	"extends": "../../tsconfig.lib.json",
+	"compilerOptions": {
+		// Build output
+		"outDir": "dist",
+
+		// Build optimization
+		"incremental": true,
+		"tsBuildInfoFile": "./dist/.tsbuildinfo",
+
+		// Path aliases - Use @/ for all internal imports
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["./src/*"],
+			"@tests/*": ["./tests/*"]
+		}
+	},
+	"include": ["src/**/*", "tests/**/*"],
+	"exclude": ["node_modules", "dist"]
+}

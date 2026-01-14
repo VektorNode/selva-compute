@@ -1,0 +1,104 @@
+{
+	"name": "@selva/compute",
+	"version": "1.2.0",
+	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
+	"author": "VektorNode",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/vektornode/selva.git",
+		"directory": "packages/compute"
+	},
+	"bugs": "https://github.com/vektornode/selva/issues",
+	"homepage": "https://github.com/vektornode/selva/tree/main/packages/compute",
+	"type": "module",
+	"keywords": [
+		"compute",
+		"rhino",
+		"grasshopper",
+		"geometry",
+		"3d",
+		"cad",
+		"parametric",
+		"modeling",
+		"rhino3dm",
+		"automation",
+		"geometry-processing",
+		"design",
+		"cloud",
+		"gh",
+		"rhino.compute",
+		"computational-design"
+	],
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./grasshopper": {
+			"types": "./dist/grasshopper.d.ts",
+			"import": "./dist/grasshopper.js",
+			"require": "./dist/grasshopper.cjs"
+		},
+		"./visualization": {
+			"types": "./dist/visualization.d.ts",
+			"import": "./dist/visualization.js",
+			"require": "./dist/visualization.cjs"
+		},
+		"./files": {
+			"types": "./dist/files.d.ts",
+			"import": "./dist/files.js",
+			"require": "./dist/files.cjs"
+		},
+		"./core": {
+			"types": "./dist/core.d.ts",
+			"import": "./dist/core.js",
+			"require": "./dist/core.cjs"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE.md"
+	],
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"sideEffects": false,
+	"scripts": {
+		"build": " pnpm type-check && pnpm clean && tsup",
+		"dev": "tsup --watch",
+		"clean": "node --input-type=module -e \"import fs from 'fs'; fs.rmSync('dist', { recursive: true, force: true })\"",
+		"test": "vitest",
+		"test:watch": "vitest watch",
+		"type-check": "tsc --noEmit",
+		"gen:types": "node ./scripts/generate-types-from-rst.js",
+		"playground": "pnpm exec tsx scripts/playground.ts"
+	},
+	"dependencies": {
+		"compute-rhino3d": "0.13.0-beta",
+		"fflate": "^0.8.2",
+		"rhino3dm": "8.9.0"
+	},
+	"peerDependencies": {
+		"three": ">=0.179.0"
+	},
+	"peerDependenciesMeta": {
+		"three": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@selva/config": "workspace:*",
+		"esbuild-plugin-file-path-extensions": "^2.1.4",
+		"tsup": "^8.5.0",
+		"vitest": "^3.2.4"
+	}
+}
