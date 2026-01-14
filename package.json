@@ -73,7 +73,7 @@
 		"test": "vitest",
 		"test:watch": "vitest watch",
 		"type-check": "tsc --noEmit",
-		"docs": "typedoc",
+		"build-docs": "typedoc",
 		"prepublishOnly": "pnpm build",
 		"release": "changeset publish"
 	},
