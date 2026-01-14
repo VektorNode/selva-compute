@@ -73,6 +73,7 @@
 		"test": "vitest",
 		"test:watch": "vitest watch",
 		"type-check": "tsc --noEmit",
+		"docs": "typedoc",
 		"prepublishOnly": "pnpm build",
 		"release": "changeset publish"
 	},
@@ -105,6 +106,8 @@
 		"svelte": "^5.46.3",
 		"three": "^0.182.0",
 		"tsup": "^8.5.0",
+		"typedoc": "^0.28.16",
+		"typedoc-plugin-markdown": "^4.9.0",
 		"typescript-eslint": "^8.53.0",
 		"vitest": "^3.2.4"
 	}

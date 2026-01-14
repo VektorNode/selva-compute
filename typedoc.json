@@ -1,0 +1,16 @@
+{
+	"$schema": "https://typedoc.org/schema.json",
+	"entryPoints": [
+		"./src/index.ts",
+		"./src/grasshopper.ts",
+		"./src/features/visualization/index.ts",
+		"./src/features/file-handling/index.ts",
+		"./src/core/index.ts"
+	],
+	"out": "docs/api",
+	"name": "Selva Compute API Reference",
+	"plugin": [],
+	"exclude": ["**/*.test.ts", "**/__tests__/**"],
+	"includeVersion": true,
+	"readme": "README.md"
+}
