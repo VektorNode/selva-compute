@@ -13,14 +13,14 @@ import type {
 /**
  * Valid endpoints for Rhino Compute
  */
-type Endpoint = 'grasshopper' | 'io' | string;
+export type Endpoint = 'grasshopper' | 'io' | string;
 
-type EndpointResponseMap = {
+export type EndpointResponseMap = {
 	grasshopper: GrasshopperComputeResponse;
 	io: IoResponseSchema;
 };
 
-type ComputeResponseFor<E extends string> = E extends keyof EndpointResponseMap
+export type ComputeResponseFor<E extends string> = E extends keyof EndpointResponseMap
 	? EndpointResponseMap[E]
 	: unknown;
 

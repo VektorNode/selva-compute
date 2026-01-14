@@ -5,6 +5,10 @@
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/VektorNode/selva-compute.git"
+	},
 	"type": "module",
 	"keywords": [
 		"compute",
@@ -107,7 +111,9 @@
 		"three": "^0.182.0",
 		"tsup": "^8.5.0",
 		"typedoc": "^0.28.16",
+		"typedoc-plugin-extras": "^4.0.1",
 		"typedoc-plugin-markdown": "^4.9.0",
+		"typedoc-plugin-missing-exports": "^4.1.2",
 		"typescript-eslint": "^8.53.0",
 		"vitest": "^3.2.4"
 	}
