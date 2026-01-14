@@ -54,6 +54,7 @@ export type { DataTreeValue } from './features/grasshopper/data-tree/data-tree';
 
 // Core Grasshopper types
 export type {
+	DataTreePath,
 	DataItem,
 	DataTree,
 	GrasshopperParsedIO,
@@ -71,13 +72,16 @@ export type {
 	GeometryInputType,
 	InputParamSchema,
 	ValueListInputType,
-	DataTreeDefault
+	DataTreeDefault,
+	DefaultValue,
+	FileInputType
 } from './features/grasshopper/types';
 
 // Output types
 export type {
 	OutputParamSchema,
-	OutputType
+	OutputType,
+	InnerTreeData
 } from './features/grasshopper/types';
 
 // Error and config types

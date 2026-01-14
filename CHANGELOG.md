@@ -4,7 +4,7 @@
 
 ### Patch Changes
 
-- c0ae495: changing name from
+- c0ae495: Updated some naming issues
 
 ## Unreleased
 
