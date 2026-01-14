@@ -26,7 +26,7 @@ _(Note: `three` is a peer dependency if you use the visualization features)_
 ### Client Side
 
 - Node.js >= 20
-- Optional: `three` >= 0.160.0 for visualization features
+- Optional: `three` >= 0.179.0 for visualization features
 
 ## License
 
