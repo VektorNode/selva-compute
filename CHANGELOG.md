@@ -1,5 +1,11 @@
 # selva-compute
 
+## 1.0.1
+
+### Patch Changes
+
+- c0ae495: changing name from
+
 ## Unreleased
 
 ### Major Changes
