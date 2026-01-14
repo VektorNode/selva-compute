@@ -1,14 +1,14 @@
 /**
- * Internal-only re-exports for `@selva/compute`.
+ * Internal-only re-exports for `selva-compute`.
  *
- * These are implementation details exposed under the opt-in `@selva/compute/internal`
+ * These are implementation details exposed under the opt-in `selva-compute/internal`
  * namespace for advanced use cases only. They are **not** part of the public API
  * and may change without notice.
  *
  * @example
  * ```typescript
  * // Only use if you really know what you're doing
- * import { zipArgs } from '@selva/compute/internal';
+ * import { zipArgs } from 'selva-compute/internal';
  * ```
  */
 

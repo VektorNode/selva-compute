@@ -67,7 +67,7 @@ export function getLogger(): Logger {
  *
  * @example
  * ```typescript
- * import { setLogger } from '@selva/compute';
+ * import { setLogger } from 'selva-compute';
  *
  * // Enable console logging
  * setLogger(console);
@@ -101,7 +101,7 @@ export function setLogger(logger: Logger | Console | null): void {
  *
  * @example
  * ```typescript
- * import { enableDebugLogging } from '@selva/compute';
+ * import { enableDebugLogging } from 'selva-compute';
  *
  * enableDebugLogging();
  * ```

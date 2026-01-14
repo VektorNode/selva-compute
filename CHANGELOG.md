@@ -1,4 +1,4 @@
-# @selva/compute
+# selva-compute
 
 ## Unreleased
 
@@ -102,14 +102,14 @@
   	updateScene,
   	parseMeshBatchObject,
   	SCALE_FACTORS
-  } from '@selva/compute/visualization';
+  } from 'selva-compute/visualization';
 
   const { scene, camera, controls } = initThree(canvas, options);
   updateScene(scene, meshes, camera, controls, initialized);
   const meshes = await parseMeshBatchObject(batch, options);
   ```
 
-  The core functions are still re-exported from `@selva/shared` for convenience, but calling them directly from `@selva/compute/visualization` is recommended.
+  The core functions are still re-exported from `@selva/shared` for convenience, but calling them directly from `selva-compute/visualization` is recommended.
 
 ## 1.1.0
 

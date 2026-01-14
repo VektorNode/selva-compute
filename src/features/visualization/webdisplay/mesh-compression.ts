@@ -13,7 +13,7 @@ interface MeshData {
 /**
  * Decompresses a base64-encoded string using GZip.
  *
- * @internal Low-level decompression helper — keep internal to `@selva/compute`.
+ * @internal Low-level decompression helper — keep internal to `selva-compute`.
  * @param base64String - The base64-encoded string to decompress.
  * @returns The decompressed MeshData.
  * @throws {RhinoComputeError} If decompression fails or data is invalid.
@@ -40,7 +40,7 @@ export function decompressMeshData(base64String: string): MeshData {
 /**
  * Decompresses batched mesh data asynchronously using requestIdleCallback for non-blocking decompression.
  *
- * @internal Low-level decompression helper — keep internal to `@selva/compute`.
+ * @internal Low-level decompression helper — keep internal to `selva-compute`.
  * @param base64String - The base64-encoded compressed data.
  * @returns Promise resolving to decompressed vertices and faces arrays.
  * @throws {RhinoComputeError} If decompression fails or data is invalid.

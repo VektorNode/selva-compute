@@ -1,4 +1,4 @@
-# Contributing to @selva/compute
+# Contributing to selva-compute
 
 ## Export Rules (Keep It Simple)
 

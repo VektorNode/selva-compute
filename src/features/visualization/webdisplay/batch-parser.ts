@@ -15,7 +15,7 @@ import type { MeshBatch, MaterialGroup, SerializableMaterial } from './types';
  * - Meshes are grouped by material for efficient rendering
  * - All geometry data is compressed together and decompressed in a Web Worker
  *
- * @internal Low-level mesh parsing — keep internal to `@selva/compute`.
+ * @internal Low-level mesh parsing — keep internal to `selva-compute`.
  *
  * @param batchJson - JSON string containing the batched mesh data
  * @param options - Rendering options
@@ -59,7 +59,7 @@ export async function parseMeshBatch(
  * Parses a MeshBatch object and creates Three.js meshes.
  * This is useful when you already have a deserialized MeshBatch object.
  *
- * @internal Low-level mesh parsing — keep internal to `@selva/compute`.
+ * @internal Low-level mesh parsing — keep internal to `selva-compute`.
  *
  * @param batch - MeshBatch object
  * @param options - Rendering options

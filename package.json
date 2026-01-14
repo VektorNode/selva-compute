@@ -1,16 +1,10 @@
 {
-	"name": "@selva/compute",
+	"name": "selva-compute",
 	"version": "1.0.0",
 	"packageManager": "pnpm@10.18.0",
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",
 	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/TheVessen/selva-compute.git"
-	},
-	"bugs": "https://github.com/TheVessen/selva-compute/issues",
-	"homepage": "https://github.com/TheVessen/selva-compute#readme",
 	"type": "module",
 	"keywords": [
 		"compute",

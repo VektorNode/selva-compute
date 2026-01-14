@@ -1,7 +1,7 @@
 /**
  * Encodes a string to base64 (Node 20+ safe)
  *
- * @internal Internal encoding helper — kept internal to `@selva/compute`.
+ * @internal Internal encoding helper — kept internal to `selva-compute`.
  *
  * @param str - String to encode
  * @returns Base64 encoded string
@@ -13,7 +13,7 @@ export function encodeStringToBase64(str: string): string {
 /**
  * Decodes a base64 string to a UTF-8 string (Node 20+ safe)
  *
- * @internal Internal encoding helper — kept internal to `@selva/compute`.
+ * @internal Internal encoding helper — kept internal to `selva-compute`.
  *
  * @param base64Str - Base64 encoded string
  * @returns Decoded UTF-8 string
@@ -26,7 +26,7 @@ export function decodeBase64ToString(base64Str: string): string {
 /**
  * Checks if a string is valid base64
  *
- * @internal Internal encoding helper — kept internal to `@selva/compute`.
+ * @internal Internal encoding helper — kept internal to `selva-compute`.
  *
  * @param str - String to check
  * @returns True if the string is valid base64
@@ -44,7 +44,7 @@ export function isBase64(str: string): boolean {
 /**
  * Decodes a base64 string to binary data (Uint8Array)
  *
- * @internal Internal encoding helper — kept internal to `@selva/compute`.
+ * @internal Internal encoding helper — kept internal to `selva-compute`.
  *
  * @param base64File - Base64 encoded string
  * @returns Decoded binary data as Uint8Array
@@ -72,7 +72,7 @@ export function decodeBase64ToBinary(base64File: string): Uint8Array {
 /**
  * Encodes binary data (Uint8Array) to base64 string
  *
- * @internal Internal encoding helper — kept internal to `@selva/compute`.
+ * @internal Internal encoding helper — kept internal to `selva-compute`.
  *
  * Source: https://github.com/mcneel/compute.rhino3d.appserver/blob/92c95a3b1d076a4d4a5360214ffd27c46425ff03/src/examples/convert/scriptjs
  * https://gist.github.com/jonleighton/958841
