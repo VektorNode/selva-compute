@@ -12,61 +12,6 @@ npm install selva-compute three
 
 _(Note: `three` is a peer dependency if you use the visualization features)_
 
-## Quick Start
-
-### 1. Initialize the Client
-
-```typescript
-import { RhinoComputeApp } from 'selva-compute';
-
-const app = new RhinoComputeApp({
-	url: 'http://localhost:6500/', // URL of your Rhino Compute instance
-	apiKey: 'your-auth-token', // Optional
-	debug: true // Enable logging
-});
-```
-
-### 2. Solve a Grasshopper Definition
-
-```typescript
-// Define your inputs
-const inputs = {
-	Length: 12.5,
-	Width: 5.0,
-	Count: 10
-};
-
-// Solve the definition
-try {
-	const result = await app.solve('my_definition.gh', inputs);
-
-	// Access outputs
-	console.log('Results:', result.values);
-	console.log('Geometry:', result.geometry); // Decoded rhino3dm objects
-} catch (error) {
-	console.error('Computation failed:', error);
-}
-```
-
-## Features
-
-- **Robust Client**: Handles connection, retries, and error parsing.
-- **Smart Solving**: Automatically formats inputs and parses output trees.
-- **Visualization Tools**: Convert Rhino geometry to Three.js objects easily.
-  ```typescript
-  import { toThreeJs } from 'selva-compute/visualization';
-  const mesh = toThreeJs(rhinoMesh);
-  scene.add(mesh);
-  ```
-- **File Utils**: Helpers for handling base64 encoding/decoding of Rhino files.
-
-## Exports
-
-- `selva-compute` - Main entry point (Client, App).
-- `selva-compute/grasshopper` - Grasshopper client and types.
-- `selva-compute/visualization` - Three.js conversion helpers.
-- `selva-compute/files` - File utilities.
-
 ## Requirements
 
 ### Server Side

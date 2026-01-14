@@ -204,6 +204,8 @@ async function handleResponse(
 // Main Function
 // ============================================================================
 
+//TODO: VALIDATE IF THIS DOC IS ACCURATE
+
 /**
  * Generic Rhino Compute fetch function.
  * Sends a POST request to any Compute endpoint with pre-prepared arguments.
