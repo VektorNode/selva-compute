@@ -33,9 +33,6 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      - name: Configure Registry
-        run: pnpm config set registry https://registry.npmjs.org/
-
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
@@ -43,3 +40,5 @@ jobs:
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: 'not-needed-for-oidc'
+          NPM_CONFIG_PROVENANCE: true
