@@ -2,6 +2,24 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getLogger } from '@/core';
 
+// Camera configuration constants
+const CAMERA_CONFIG = {
+	HUGE_THRESHOLD: 10000,
+	LARGE_THRESHOLD: 1000,
+	SCALE_RATIO_THRESHOLD: 100,
+	NEAR_PLANE_FACTOR: {
+		TINY: 0.0001,
+		SMALL: 0.001,
+		NORMAL: 0.01,
+	},
+	FAR_PLANE_FACTOR: {
+		HUGE: 100,
+		LARGE: 50,
+		NORMAL: 20,
+	},
+	InitialDistanceMultiplier: 4,
+};
+
 /**
  * Updates the scene with the given meshes and camera settings.
  * If initialPositionSet is false, it positions the camera and sets the controls target based on the bounding boxes of the meshes.
@@ -22,13 +40,13 @@ export function updateScene(
 
 	if (meshes.length === 0) return;
 
-	const unionBoundingBox = new THREE.Box3();
-
+	// Add new meshes to scene
 	meshes.forEach((mesh) => {
 		scene.add(mesh);
-		const boundingBox = new THREE.Box3().setFromObject(mesh);
-		unionBoundingBox.union(boundingBox);
 	});
+
+	// Calculate bounds of the new content
+	const unionBoundingBox = computeCombinedBoundingBox(meshes);
 
 	// Get the center of the union bounding box
 	const center = unionBoundingBox.getCenter(new THREE.Vector3());
@@ -41,28 +59,28 @@ export function updateScene(
 	// This prevents clipping when geometry size changes significantly
 	const scaleRatio = maxDim / Math.min(size.x || 1, size.y || 1, size.z || 1);
 
-	if (scaleRatio > 100 || maxDim > 10000) {
+	if (scaleRatio > CAMERA_CONFIG.SCALE_RATIO_THRESHOLD || maxDim > CAMERA_CONFIG.HUGE_THRESHOLD) {
 		// Large scale range detected - use logarithmic depth buffer approach
-		camera.near = maxDim * 0.0001; // 0.01% of max dimension
-		camera.far = maxDim * 100; // 100x max dimension
-	} else if (maxDim > 1000) {
+		camera.near = maxDim * CAMERA_CONFIG.NEAR_PLANE_FACTOR.TINY;
+		camera.far = maxDim * CAMERA_CONFIG.FAR_PLANE_FACTOR.HUGE;
+	} else if (maxDim > CAMERA_CONFIG.LARGE_THRESHOLD) {
 		// Large scene
-		camera.near = maxDim * 0.001;
-		camera.far = maxDim * 50;
+		camera.near = maxDim * CAMERA_CONFIG.NEAR_PLANE_FACTOR.SMALL;
+		camera.far = maxDim * CAMERA_CONFIG.FAR_PLANE_FACTOR.LARGE;
 	} else {
 		// Normal scene
-		camera.near = Math.max(0.01, maxDim * 0.01);
-		camera.far = Math.max(2000, maxDim * 20);
+		camera.near = Math.max(0.01, maxDim * CAMERA_CONFIG.NEAR_PLANE_FACTOR.NORMAL);
+		camera.far = Math.max(2000, maxDim * CAMERA_CONFIG.FAR_PLANE_FACTOR.NORMAL);
 	}
 
 	camera.updateProjectionMatrix();
 
 	// Only reposition camera and controls on first frame
 	if (!initialPositionSet) {
-		const distance = maxDim * 4;
+		const distance = maxDim * CAMERA_CONFIG.InitialDistanceMultiplier;
 
 		camera.position.set(center.x + distance * 0.8, center.y + distance, center.z + distance * 1.2);
-		controls.target = center;
+		controls.target.copy(center);
 		controls.minDistance = camera.near * 2;
 		controls.maxDistance = camera.far * 0.9;
 
@@ -110,6 +128,7 @@ export function parseColor(colorString: string): THREE.Color {
 	if (trimmed.includes(',')) {
 		const rgb = trimmed.split(',').map((c) => parseInt(c.trim(), 10));
 		if (rgb.length === 3 && rgb.every((n) => !isNaN(n) && n >= 0 && n <= 255)) {
+			// THREE.Color constructor accepts r, g, b in range [0, 1]
 			return new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
 		}
 	}
@@ -126,16 +145,22 @@ export function parseColor(colorString: string): THREE.Color {
 export function applyOffset(meshes: THREE.Mesh[], offsetY: number): void {
 	meshes.forEach((mesh) => {
 		mesh.position.y -= offsetY;
+		// Ensure world matrix is pending update if needed
+		mesh.updateMatrix();
 	});
 }
 
+/**
+ * Computes the combined AI world-axis-aligned bounding box of a set of meshes.
+ * Correctly accounts for mesh transformations (rotation, position, scale).
+ */
 export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
 	const combinedBoundingBox = new THREE.Box3();
 	meshes.forEach((mesh) => {
-		mesh.geometry.computeBoundingBox();
-		if (mesh.geometry.boundingBox) {
-			combinedBoundingBox.union(mesh.geometry.boundingBox);
-		}
+		// Ensure the world matrix is up to date before calculating the box
+		mesh.updateMatrixWorld(true);
+		const bbox = new THREE.Box3().setFromObject(mesh);
+		combinedBoundingBox.union(bbox);
 	});
 	return combinedBoundingBox;
 }
@@ -143,20 +168,29 @@ export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
 /**
  * Updates shadow camera bounds to match scene geometry.
  * This prevents shadow artifacts and ensures proper shadow coverage.
+ * @param scene - The scene containing geometry.
+ * @param directionalLight - The light to update.
+ * @param optionalBounds - Optional pre-calculated bounds to avoid scene traversal.
  */
 export function updateShadowCameraBounds(
 	scene: THREE.Scene,
-	directionalLight: THREE.DirectionalLight
+	directionalLight: THREE.DirectionalLight,
+	optionalBounds?: THREE.Box3
 ): void {
-	const bbox = new THREE.Box3();
+	let bbox = optionalBounds;
 
-	scene.traverse((object) => {
-		if (object instanceof THREE.Mesh && object.userData.id !== 'floor') {
-			bbox.expandByObject(object);
-		}
-	});
+	if (!bbox) {
+		bbox = new THREE.Box3();
+		scene.traverse((object) => {
+			if (object instanceof THREE.Mesh && object.userData.id !== 'floor') {
+				// Use setFromObject to ensure world transforms are respected
+				const objBbox = new THREE.Box3().setFromObject(object);
+				bbox!.union(objBbox);
+			}
+		});
+	}
 
-	if (bbox.isEmpty()) return;
+	if (!bbox || bbox.isEmpty()) return;
 
 	const size = bbox.getSize(new THREE.Vector3());
 	const center = bbox.getCenter(new THREE.Vector3());
@@ -181,7 +215,7 @@ export function updateShadowCameraBounds(
 	directionalLight.shadow.camera.far = lightDistance * 3;
 
 	// Improve shadow quality for extreme scales
-	if (maxDim > 1000) {
+	if (maxDim > CAMERA_CONFIG.LARGE_THRESHOLD) {
 		directionalLight.shadow.bias = -0.001;
 		directionalLight.shadow.normalBias = 0.05;
 	} else {
@@ -213,11 +247,13 @@ function clearScene(scene: THREE.Scene): void {
 
 			const materials = Array.isArray(object.material) ? object.material : [object.material];
 			materials.forEach((material) => {
-				Object.values(material).forEach((value) => {
-					if (value instanceof THREE.Texture) {
+				// Dispose textures first
+				for (const key in material) {
+					const value = material[key as keyof THREE.Material];
+					if (value && value instanceof THREE.Texture) {
 						value.dispose();
 					}
-				});
+				}
 				material.dispose();
 			});
 		}
