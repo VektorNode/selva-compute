@@ -6,7 +6,7 @@
  *
  * @example High-level usage
  * ```typescript
- * import { GrasshopperClient } from 'rhino-compute-core/grasshopper';
+ * import { GrasshopperClient } from 'selva-compute/grasshopper';
  *
  * const client = new GrasshopperClient({ serverUrl: 'http://localhost:8081' });
  * const result = await client.solve(definitionUrl, dataTree);
@@ -14,7 +14,7 @@
  *
  * @example Low-level usage
  * ```typescript
- * import { solveGrasshopperDefinition, normalizeComputeConfig } from 'rhino-compute-core/grasshopper';
+ * import { solveGrasshopperDefinition, normalizeComputeConfig } from 'selva-compute/grasshopper';
  *
  * const config = normalizeComputeConfig({ serverUrl: 'http://localhost:8081' });
  * const result = await solveGrasshopperDefinition(dataTree, definition, config);
@@ -46,6 +46,7 @@ export { fetchDefinitionIO, fetchParsedDefinitionIO } from './features/grasshopp
 // ============================================================================
 
 export { processInputs, processInput, TreeBuilder } from './features/grasshopper';
+
 export type { DataTreeValue } from './features/grasshopper/data-tree/data-tree';
 
 // ============================================================================
@@ -53,17 +54,20 @@ export type { DataTreeValue } from './features/grasshopper/data-tree/data-tree';
 // ============================================================================
 
 // Core Grasshopper types
+
 export type {
 	DataTreePath,
 	DataItem,
 	DataTree,
 	GrasshopperParsedIO,
+	GrasshopperParsedIORaw,
 	GrasshopperRequestSchema,
 	GrasshopperComputeResponse,
 	GrasshopperComputeConfig
 } from './features/grasshopper/types';
 
 // Input types
+
 export type {
 	InputParam,
 	NumericInputType,
@@ -78,12 +82,13 @@ export type {
 } from './features/grasshopper/types';
 
 // Output types
-export type {
-	OutputParamSchema,
-	OutputType,
-	InnerTreeData
-} from './features/grasshopper/types';
+
+export type { OutputParamSchema, OutputType, InnerTreeData } from './features/grasshopper/types';
+
+export type { GetValuesOptions, GetValuesResult, ParsedContext } from './features/grasshopper';
 
 // Error and config types
+
 export { RhinoComputeError } from './core';
+
 export type { ComputeConfig, RhinoModelUnit } from './core';

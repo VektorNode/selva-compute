@@ -242,7 +242,6 @@ export function processInput(rawInput: InputParamSchema): InputParam {
  * ```
  *
  * @see {@link processInput} for individual input processing logic
- * @see {@link preProcessRawInput} for default value normalization
  */
 export function processInputs(rawInputs: InputParamSchema[]): InputParam[] {
 	return rawInputs.map((rawInput) => processInput(rawInput));

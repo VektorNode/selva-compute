@@ -104,23 +104,23 @@ const processFiles = async (
 
 	// Process compute response files
 	dataItems.forEach((item) => {
-		let filePath = `${item.FileName}${item.FileType}`;
+		let filePath = `${item.fileName}${item.fileType}`;
 
-		if (item.SubFolder && item.SubFolder.trim() !== '') {
-			filePath = `${item.SubFolder}/${filePath}`;
+		if (item.subFolder && item.subFolder.trim() !== '') {
+			filePath = `${item.subFolder}/${filePath}`;
 		}
 
-		if (item.IsBase64Encoded === true && item.Data) {
-			const bites = decodeBase64ToBinary(item.Data);
+		if (item.isBase64Encoded === true && item.data) {
+			const bites = decodeBase64ToBinary(item.data);
 			processedFiles.push({
-				fileName: `${item.FileName}${item.FileType}`,
+				fileName: `${item.fileName}${item.fileType}`,
 				content: new Uint8Array(bites.buffer),
 				path: filePath
 			});
-		} else if (item.IsBase64Encoded === false && item.Data) {
+		} else if (item.isBase64Encoded === false && item.data) {
 			processedFiles.push({
-				fileName: `${item.FileName}${item.FileType}`,
-				content: item.Data,
+				fileName: `${item.fileName}${item.fileType}`,
+				content: item.data,
 				path: filePath
 			});
 		}
@@ -131,20 +131,20 @@ const processFiles = async (
 		const additionalProcessed = await Promise.all(
 			filesArray.map(async (file) => {
 				try {
-					const response = await fetch(file.FilePath);
+					const response = await fetch(file.filePath);
 					if (!response.ok) {
-						getLogger().warn(`Failed to fetch additional file from URL: ${file.FilePath}`);
+						getLogger().warn(`Failed to fetch additional file from URL: ${file.filePath}`);
 						return null;
 					}
 					const fileBlob = await response.blob();
 					const arrayBuffer = await fileBlob.arrayBuffer();
 					return {
-						fileName: file.FileName,
+						fileName: file.fileName,
 						content: new Uint8Array(arrayBuffer),
-						path: file.FileName
+						path: file.fileName
 					} as ProcessedFile;
 				} catch (error) {
-					getLogger().error(`Error fetching additional file from URL: ${file.FilePath}`, error);
+					getLogger().error(`Error fetching additional file from URL: ${file.filePath}`, error);
 					return null;
 				}
 			})

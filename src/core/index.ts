@@ -1,21 +1,36 @@
 /**
- * Core utilities and configuration for rhino-compute-core
+ * Core utilities and configuration for selva-compute
  *
- * This module provides low-level utilities, error handling, and configuration management.
+ * This module provides the foundational building blocks for the library, including:
+ * - **Networking**: Type-safe HTTP wrappers for the Rhino Compute API
+ * - **Server Monitoring**: Health checks and telemetry monitoring
+ * - **Error Handling**: Specialized error classes for API and network failures
+ * - **Logging**: Configurable debug and production logging
  *
- * @example
+ * @example Performing a low-level compute request
  * ```typescript
- * import { normalizeComputeConfig, RhinoComputeError, ErrorCodes } from 'rhino-compute-core/core';
- *
- * const config = normalizeComputeConfig({ serverUrl: 'http://localhost:8081' });
+ * import { fetchRhinoCompute, RhinoComputeError } from 'selva-compute/core';
  *
  * try {
- *   // ... some operation
+ *   const data = await fetchRhinoCompute('rhino/health', null, config);
+ *   console.log('Server is healthy:', data);
  * } catch (error) {
- *   if (error instanceof RhinoComputeError && error.code === ErrorCodes.AUTH_ERROR) {
- *     console.error('Authentication failed');
+ *   if (error instanceof RhinoComputeError) {
+ *     console.error(`API Error [${error.code}]: ${error.message}`);
  *   }
  * }
+ * ```
+ *
+ * @example Monitoring server status
+ * ```typescript
+ * import { ComputeServerStats } from 'selva-compute/core';
+ *
+ * const stats = new ComputeServerStats(serverUrl, apiKey);
+ * if (await stats.isServerOnline()) {
+ *   const info = await stats.getServerStats();
+ *   console.log(`Compute Version: ${info.version}`);
+ * }
+ * await stats.dispose();
  * ```
  *
  * @module core
@@ -51,5 +66,3 @@ export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
 // Configuration
 export type { ComputeConfig, RhinoModelUnit } from './types';
-
-

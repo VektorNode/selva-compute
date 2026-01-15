@@ -1,16 +1,17 @@
 {
 	"$schema": "https://typedoc.org/schema.json",
 	"entryPoints": [
-		"./src/index.ts",
-		"./src/grasshopper.ts",
+		"./src/core/index.ts",
 		"./src/features/visualization/index.ts",
-		"./src/features/file-handling/index.ts",
-		"./src/core/index.ts"
+		"./src/grasshopper.ts",
+		"./src/index.ts"
 	],
 	"out": "docs/api",
 	"name": "Selva Compute API Reference",
-	"plugin": [],
 	"exclude": ["**/*.test.ts", "**/__tests__/**"],
 	"includeVersion": true,
-	"readme": "README.md"
+	"readme": "README.md",
+	"plugin": ["typedoc-plugin-missing-exports", "typedoc-plugin-extras"],
+	"hideGenerator": true,
+	"customFooterHtml": "Powered by VektorNode"
 }

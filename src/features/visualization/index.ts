@@ -1,5 +1,5 @@
 /**
- * Visualization utilities for rhino-compute-core
+ * Visualization utilities for selva-compute
  *
  * Provides Three.js integration and web display mesh parsing.
  *

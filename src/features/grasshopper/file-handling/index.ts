@@ -4,5 +4,4 @@
 
 export { extractFilesFromComputeResponse, downloadFileData } from './handle-files';
 
-// Types (generated from compute-schema.json)
 export type { ProcessedFile, FileData, FileBaseInfo } from './types';

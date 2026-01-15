@@ -112,7 +112,9 @@ export async function parseMeshBatchObject(
 			getLogger().debug(
 				`  Vertices: ${(vertices.length / 3).toLocaleString()} | Faces: ${(faces.length / 3).toLocaleString()}`
 			);
-			getLogger().debug(`  Compressed: ${compressedSizeMB} MB | Uncompressed: ${uncompressedSizeMB} MB`);
+			getLogger().debug(
+				`  Compressed: ${compressedSizeMB} MB | Uncompressed: ${uncompressedSizeMB} MB`
+			);
 			getLogger().debug(`  Compression Ratio: ${compressionRatio}%`);
 		}
 

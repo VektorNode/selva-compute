@@ -15,10 +15,10 @@ export interface Logger {
  * @internal
  */
 class NoOpLogger implements Logger {
-	debug(): void { }
-	info(): void { }
-	warn(): void { }
-	error(): void { }
+	debug(): void {}
+	info(): void {}
+	warn(): void {}
+	error(): void {}
 }
 
 /**

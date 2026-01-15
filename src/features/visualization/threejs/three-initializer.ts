@@ -44,9 +44,10 @@ export const initThree = function (
 		addFloor(scene, config);
 	}
 
-	const eventHandlers = config.events.enableEventHandlers !== false
-		? setupEventHandlers(canvas, scene, camera, controls, config)
-		: { dispose: () => { }, fitToView: () => { }, clearSelection: () => { } };
+	const eventHandlers =
+		config.events.enableEventHandlers !== false
+			? setupEventHandlers(canvas, scene, camera, controls, config)
+			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
 
 	// Handle resizing
 	const { resize, dispose: disposeResize } = setupResponsiveResize(canvas, renderer, camera);
@@ -596,11 +597,12 @@ function setupEventHandlers(
 	};
 
 	// Parse selection color
-	const selectionColorObj = typeof config.events.selectionColor === 'string'
-		? new THREE.Color(config.events.selectionColor)
-		: config.events.selectionColor instanceof THREE.Color
-			? config.events.selectionColor
-			: new THREE.Color('#ff0000');
+	const selectionColorObj =
+		typeof config.events.selectionColor === 'string'
+			? new THREE.Color(config.events.selectionColor)
+			: config.events.selectionColor instanceof THREE.Color
+				? config.events.selectionColor
+				: new THREE.Color('#ff0000');
 
 	// Clear selection
 	const clearSelection = () => {
@@ -644,7 +646,10 @@ function setupEventHandlers(
 				selectedObjects.add(clickedObject);
 
 				// Clone material and apply selection color only to this mesh
-				if (clickedObject instanceof THREE.Mesh && clickedObject.material instanceof THREE.Material) {
+				if (
+					clickedObject instanceof THREE.Mesh &&
+					clickedObject.material instanceof THREE.Material
+				) {
 					// Store original material
 					originalMaterials.set(clickedObject, clickedObject.material);
 

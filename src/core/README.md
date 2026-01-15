@@ -1,79 +1,73 @@
-% rhino-compute-core — Core utilities and clients
+# Core Module
 
-This folder contains the core building blocks used throughout the package. It provides small,
-well-typed utilities, client helpers for talking to a Rhino Compute server, error types, and other
-shared code that higher-level features rely on.
+Foundational utilities and low-level clients that power the `selva-compute` library. This module handles the "plumbing" of communicating with Rhino Compute.
 
-When working inside the package the `core` module is the primary place to look for:
+## Key Responsibilities
 
-- network and fetch helpers that call the Compute server
-- typed error classes and helpers used across the project
-- binary/encoding helpers for handling base64 and binary payloads
-- small data validation and key-normalization utilities
+- **Compute Communication**: Type-safe HTTP wrappers for the Rhino Compute API.
+- **Error Handling**: Specialized `RhinoComputeError` classes for precise debugging of API and network failures.
+- **Server Monitoring**: Utilities to fetch runtime stats and telemetry from Compute instances.
+- **Data Processing**: Utilities for base64 encoding/decoding and camelCase normalization of API responses.
 
-## Layout
+## Structure
 
+```text
+src/core/
+├── compute-fetch/    # Low-level HTTP client logic
+├── errors/           # Custom error types and factory
+├── server/           # Server health and stats monitoring
+├── utils/            # Encoding, logging, and string utilities
+└── types.ts          # Core shared configuration types
 ```
-src/core
-├─ client/                # client helpers and telemetry
-│  ├─ compute-server-stats.ts
-│  └─ index.ts
-├─ compute-fetch/         # safe wrappers around fetch/compute requests
-│  ├─ compute-fetch.ts
-│  └─ index.ts
-├─ errors/                # typed error classes and helpers
-│  ├─ auth.ts
-│  ├─ base.ts
-│  ├─ compute-errors.ts
-│  ├─ network.ts
-│  └─ validation.ts
-├─ utils/                 # small reusable utilities
-│  ├─ camel-case.ts
-│  ├─ encoding.ts
-│  ├─ validation.ts
-│  └─ warnings.ts
-├─ types.ts               # core shared TypeScript types
-└─ README.md              # this file
-```
-
-## Key APIs
-
-- `compute-fetch/compute-fetch.ts` — a safe, typed wrapper for performing requests to the Rhino
-  Compute server. Handles JSON parsing, status checks and converts responses into the project's
-  typed shapes.
-
-- `client/compute-server-stats.ts` — lightweight helpers to request and normalise runtime/telemetry
-  information from a Compute server.
-
-- `errors/*` — a set of Error subclasses (for auth, network, validation and compute-specific
-  failures) that make it easy to inspect and react to specific failure modes.
-
-- `utils/encoding.ts` — base64 and binary helpers used when responses contain file data or binary
-  blobs. The utilities are written to work in both browser and Node environments.
-
-- `utils/camel-case.ts` — converts API response keys to camelCase to make consuming data predictable
-  in JavaScript/TypeScript.
 
 ## Usage
 
-Import what you need from the package entrypoints. Example (consumer-facing):
+The `core` module provides the building blocks for the rest of the library. Below are the two most common ways to use it.
 
-```ts
-import { fetchFromCompute } from 'rhino-compute-core/core/compute-fetch';
-import { ValidationError } from 'rhino-compute-core/core/errors';
+### 1. Low-level API Requests
 
-async function fetchModel() {
+Use `fetchRhinoCompute` for type-safe requests to arbitrary Rhino Compute endpoints.
+
+```typescript
+import { fetchRhinoCompute, RhinoComputeError } from 'selva-compute/core';
+
+async function performCustomJob(config) {
 	try {
-		const data = await fetchFromCompute('/rhino/compute/some-endpoint');
-		// process data...
-	} catch (e) {
-		if (e instanceof ValidationError) {
-			// handle validation problems specifically
+		const response = await fetchRhinoCompute(
+			'rhino/geometry/point/at',
+			{ x: 1, y: 0, z: 0 },
+			config
+		);
+		return response;
+	} catch (error) {
+		if (error instanceof RhinoComputeError) {
+			// Handle specific error codes (e.g. AUTH_ERROR, COMPUTATION_ERROR)
+			console.error(`Status ${error.status}: ${error.message}`);
 		}
-		throw e;
 	}
 }
 ```
 
-Note: public package entry points re-export many of these symbols. Prefer importing from the package
-root (`rhino-compute-core`) where possible so the bundler/exports map can apply optimisations.
+### 2. Server Monitoring
+
+Use `ComputeServerStats` to check server health, get the version, or monitor active child processes.
+
+```typescript
+import { ComputeServerStats } from 'selva-compute/core';
+
+async function checkServer(url, apiKey) {
+	const stats = new ComputeServerStats(url, apiKey);
+
+	try {
+		if (await stats.isServerOnline()) {
+			const info = await stats.getServerStats();
+			console.log(`Server Version: ${info.version}`);
+			console.log(`Active Children: ${info.activeChildren.length}`);
+		}
+	} finally {
+		await stats.dispose(); // Always dispose to clear monitoring timeouts
+	}
+}
+```
+
+> **Note:** Higher-level features like the `GrasshopperClient` use these modules internally. Direct use is recommended for custom low-level API calls or dedicated monitoring services.

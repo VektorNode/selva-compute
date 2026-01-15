@@ -20,8 +20,7 @@ import {
  *   - A base64-encoded string of the .gh file
  *   - A plain string (will be base64-encoded)
  *   - A Uint8Array of the .gh file (will be base64-encoded)
- * @param config - Compute configuration (server URL, API key, etc.)
- * @param options - Optional compute options (timeout, cachesolve, model units, tolerances, etc.).
+ * @param config - Compute configuration (server URL, API key, etc. along with optional timeout, units, etc.)
  * @returns An object containing the compute result and extracted file data.
  *
  * @example
@@ -94,7 +93,6 @@ export function prepareGrasshopperArgs(
 
 	return args;
 }
-
 
 /**
  * @internal

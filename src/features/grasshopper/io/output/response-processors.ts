@@ -1,4 +1,4 @@
-import { FileData } from '../../../file-handling/types';
+import { FileData } from '../../file-handling/types';
 import { GrasshopperComputeResponse, DataItem } from '../../types';
 import { decodeRhinoGeometry } from './rhino-decoder';
 
@@ -39,6 +39,13 @@ const FILE_DATA_TYPE = 'FileData';
 // Utilities
 // -----------------------------------------------------------------------------
 
+/**
+ * Checks if a given type string should be excluded by verifying if it contains
+ * any of the substrings defined in the `EXCLUDED_TYPES` list.
+ *
+ * @param type - The string representation of the type to check.
+ * @returns `true` if the type matches any excluded pattern; otherwise, `false`.
+ */
 function isExcludedType(type: string): boolean {
 	return EXCLUDED_TYPES.some((t) => type.includes(t));
 }
@@ -101,6 +108,12 @@ function extractItemValue(data: any, type: string, parseValues: boolean, rhino?:
 }
 
 // Traversal helper
+/**
+ * Iterates over every data item within a Grasshopper tree structure.
+ *
+ * @param tree - The Grasshopper tree structure containing branches of items.
+ * @param handler - A callback function invoked for each {@link DataItem} found within the tree branches.
+ */
 function forEachTreeItem(
 	tree: GrasshopperComputeResponse['values'][0]['InnerTree'],
 	handler: (item: DataItem) => void
@@ -116,6 +129,22 @@ function forEachTreeItem(
 // Public API
 // -----------------------------------------------------------------------------
 
+/**
+ * Extracts and processes values from a Grasshopper Compute response object.
+ *
+ * This function iterates through the internal tree structure of the response parameters,
+ * extracts individual data items, and aggregates them into a structured result object.
+ * Values can be mapped by their parameter names or unique identifiers.
+ *
+ * @template T - The type of the resulting parsed context values.
+ * @param response - The raw response object received from the Grasshopper Compute service.
+ * @param byId - Whether to use the parameter's unique ID as the key (true) or its name (false).
+ * @param options - Configuration options for value extraction.
+ * @param options.parseValues - Whether to attempt parsing complex data types into JavaScript objects.
+ * @param options.rhino - An optional Rhino3dm instance used for geometry decoding.
+ * @param options.stringOnly - If true, only items identified as strings will be included in the output.
+ * @returns A result object containing the mapped values, where duplicate keys are aggregated into arrays.
+ */
 export function getValues<T = ParsedContext>(
 	response: GrasshopperComputeResponse,
 	byId: boolean = false,
@@ -147,6 +176,16 @@ export function getValues<T = ParsedContext>(
 	return { values: result as T };
 }
 
+/**
+ * Extracts and decodes file data from a Grasshopper Compute response.
+ *
+ * This function iterates through all parameter values in the compute response,
+ * identifies items that match the file data type, and attempts to decode their
+ * JSON content into {@link FileData} objects.
+ *
+ * @param response - The response object received from a Grasshopper Compute request.
+ * @returns An array of valid {@link FileData} objects extracted from the response trees.
+ */
 export function extractFileData(response: GrasshopperComputeResponse): FileData[] {
 	const output: FileData[] = [];
 
@@ -164,6 +203,25 @@ export function extractFileData(response: GrasshopperComputeResponse): FileData[
 	return output;
 }
 
+/**
+ * Extracts a value or collection of values from a Grasshopper Compute response based on the provided criteria.
+ *
+ * This function searches through the `InnerTree` structures of the response values. If searching `byName`,
+ * it returns all values (or a single value) within that parameter's tree. If searching `byId`, it specifically
+ * targets items matching that unique identifier.
+ *
+ * @param response - The compute response object containing the results of a Grasshopper definition execution.
+ * @param options - Search criteria, either a `{ byName: string }` to match a `ParamName`, or `{ byId: string }` to match a specific item ID.
+ * @param parseOptions - Optional configuration for how values are extracted and filtered.
+ * @param parseOptions.parseValues - Whether to process raw data into formatted values (defaults to `true`).
+ * @param parseOptions.rhino - Optional Rhino/OpenNURBS instance used for geometry decoding.
+ * @param parseOptions.stringOnly - If `true`, non-string types will be filtered out (defaults to `false`).
+ *
+ * @returns
+ * - `undefined` if no matching parameter or items are found.
+ * - A single extracted value if only one matching item exists.
+ * - An array of extracted values if multiple matching items are found.
+ */
 export function getValue(
 	response: GrasshopperComputeResponse,
 	options: { byName: string } | { byId: string },
