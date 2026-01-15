@@ -63,7 +63,7 @@
 	},
 	"publishConfig": {
 		"access": "public",
-		"provenance": true
+		"provenance": false
 	},
 	"sideEffects": false,
 	"scripts": {
