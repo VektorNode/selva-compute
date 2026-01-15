@@ -1,5 +1,11 @@
 # selva-compute
 
+## 1.1.0
+
+### Minor Changes
+
+- dac3245: Changed file types from PascalCase to camelCase
+
 ## 1.0.1
 
 ### Patch Changes
