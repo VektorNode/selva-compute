@@ -1,5 +1,11 @@
 # selva-compute
 
+## 1.1.1
+
+### Patch Changes
+
+- 58e5a24: Refactor visualization helpers: fix bounding box calculation, optimize shadow camera bounds, and externalize camera configuration constants.
+
 ## 1.1.0
 
 ### Minor Changes
