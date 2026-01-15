@@ -79,7 +79,7 @@
 		"type-check": "tsc --noEmit",
 		"build-docs": "typedoc",
 		"prepublishOnly": "pnpm build",
-		"release": "changeset publish -- --access public --provenance"
+		"release": "changeset publish"
 	},
 	"dependencies": {
 		"compute-rhino3d": "0.13.0-beta",
