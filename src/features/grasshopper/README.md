@@ -51,7 +51,8 @@ grasshopper/
 │   │   └── input-parsers/    # Type-specific parsers
 │   ├── output/          # Output response processing
 │   └── tree-helpers/    # Data tree utilities
-├── types.ts             # TypeScript type definitions
+├── file-handling/       # File extraction and downloading utilities
+├── types/               # TypeScript type definitions
 └── index.ts             # Public API exports
 ```
 

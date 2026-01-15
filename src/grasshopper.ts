@@ -83,18 +83,9 @@ export type {
 
 // Output types
 
-export type {
-	OutputParamSchema,
-	OutputType,
-	InnerTreeData
-} from './features/grasshopper/types';
+export type { OutputParamSchema, OutputType, InnerTreeData } from './features/grasshopper/types';
 
-
-export type {
-	GetValuesOptions,
-	GetValuesResult,
-	ParsedContext
-} from './features/grasshopper';
+export type { GetValuesOptions, GetValuesResult, ParsedContext } from './features/grasshopper';
 
 // Error and config types
 
