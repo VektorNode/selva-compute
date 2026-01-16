@@ -50,6 +50,17 @@ export { processInputs, processInput, TreeBuilder } from './features/grasshopper
 export type { DataTreeValue } from './features/grasshopper/data-tree/data-tree';
 
 // ============================================================================
+// FILE HANDLING (Extracting files from responses)
+// ============================================================================
+
+export {
+	extractFilesFromComputeResponse,
+	downloadFileData
+} from './features/grasshopper';
+
+export type { ProcessedFile, FileData, FileBaseInfo } from './features/grasshopper';
+
+// ============================================================================
 // TYPE EXPORTS (Public types for this module)
 // ============================================================================
 
@@ -83,18 +94,9 @@ export type {
 
 // Output types
 
-export type {
-	OutputParamSchema,
-	OutputType,
-	InnerTreeData
-} from './features/grasshopper/types';
+export type { OutputParamSchema, OutputType, InnerTreeData } from './features/grasshopper/types';
 
-
-export type {
-	GetValuesOptions,
-	GetValuesResult,
-	ParsedContext
-} from './features/grasshopper';
+export type { GetValuesOptions, GetValuesResult, ParsedContext } from './features/grasshopper';
 
 // Error and config types
 

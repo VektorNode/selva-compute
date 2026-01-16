@@ -10,15 +10,15 @@
  */
 export type FileData = {
 	/** Base filename without extension (e.g., "model") */
-	FileName: string;
+	fileName: string;
 	/** File content as a base64-encoded or plain string, depending on {@link IsBase64Encoded} */
-	Data: string;
+	data: string;
 	/** File extension including the dot (e.g., ".3dm", ".json"). Appended to {@link FileName} to create the full filename */
-	FileType: string;
+	fileType: string;
 	/** Whether {@link Data} is base64-encoded. If true, must be decoded to binary before use. If false, can be used as a plain text string */
-	IsBase64Encoded: boolean;
+	isBase64Encoded: boolean;
 	/** Directory path for organizing the file in archive structures (e.g., ZIP). Typically empty string for root-level files, or a path like "subfolder/nested" */
-	SubFolder: string;
+	subFolder: string;
 };
 
 /**
@@ -47,17 +47,13 @@ export type ProcessedFile = {
  * that should be fetched and included when processing files. The file is fetched
  * from the provided URL and processed as a {@link ProcessedFile}.
  *
- * Note: Uses PascalCase naming for consistency with {@link FileData}, even though
- * this type is created internally rather than received from an external API. This
- * unified naming convention makes it clear that both types work together in the
- * file handling workflow.
  *
  * @see {@link FileData} for files from compute responses
  * @see {@link processFiles} for how FileBaseInfo is processed (fetched and converted)
  */
 export type FileBaseInfo = {
 	/** Destination filename for the file in the archive or result set (e.g., "additional-data.json") */
-	FileName: string;
+	fileName: string;
 	/** URL to fetch the file from. Must be accessible from the runtime environment */
-	FilePath: string;
+	filePath: string;
 };

@@ -22,7 +22,6 @@ export function decodeBase64ToString(base64Str: string): string {
 	return Buffer.from(base64Str, 'base64').toString('utf-8');
 }
 
-
 /**
  * Checks if a string is valid base64
  *
@@ -39,7 +38,6 @@ export function isBase64(str: string): boolean {
 		return false;
 	}
 }
-
 
 /**
  * Decodes a base64 string to binary data (Uint8Array)

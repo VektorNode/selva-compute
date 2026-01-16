@@ -1,6 +1,6 @@
 {
 	"name": "selva-compute",
-	"version": "1.0.1",
+	"version": "1.1.1",
 	"packageManager": "pnpm@10.18.0",
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",
@@ -47,11 +47,6 @@
 			"import": "./dist/visualization.js",
 			"require": "./dist/visualization.cjs"
 		},
-		"./files": {
-			"types": "./dist/files.d.ts",
-			"import": "./dist/files.js",
-			"require": "./dist/files.cjs"
-		},
 		"./core": {
 			"types": "./dist/core.d.ts",
 			"import": "./dist/core.js",
@@ -67,13 +62,18 @@
 		"node": ">=20.0.0"
 	},
 	"publishConfig": {
-		"access": "public"
+		"access": "public",
+		"provenance": false
 	},
 	"sideEffects": false,
 	"scripts": {
 		"build": " pnpm type-check && pnpm clean && tsup",
 		"dev": "tsup --watch",
 		"clean": "node --input-type=module -e \"import fs from 'fs'; fs.rmSync('dist', { recursive: true, force: true })\"",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
 		"test": "vitest",
 		"test:watch": "vitest watch",
 		"type-check": "tsc --noEmit",
@@ -113,6 +113,7 @@
 		"typedoc-plugin-extras": "^4.0.1",
 		"typedoc-plugin-markdown": "^4.9.0",
 		"typedoc-plugin-missing-exports": "^4.1.2",
+		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.53.0",
 		"vitest": "^3.2.4"
 	}

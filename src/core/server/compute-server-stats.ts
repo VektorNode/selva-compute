@@ -35,18 +35,16 @@ export default class ComputeServerStats {
 	 */
 	constructor(serverUrl: string, apiKey?: string) {
 		if (!serverUrl?.trim()) {
-			throw new RhinoComputeError(
-				'serverUrl is required',
-				ErrorCodes.INVALID_CONFIG,
-				{ context: { serverUrl } }
-			);
+			throw new RhinoComputeError('serverUrl is required', ErrorCodes.INVALID_CONFIG, {
+				context: { serverUrl }
+			});
 		}
 
 		// Validate URL has http:// or https:// scheme
 		if (!serverUrl.match(/^https?:\/\//)) {
 			throw new RhinoComputeError(
 				`Invalid serverUrl: "${serverUrl}". Must start with "http://" or "https://". ` +
-				`For example: "http://localhost:5000" or "https://example.com"`,
+					`For example: "http://localhost:5000" or "https://example.com"`,
 				ErrorCodes.INVALID_CONFIG,
 				{ context: { serverUrl } }
 			);
@@ -57,7 +55,7 @@ export default class ComputeServerStats {
 		} catch (err) {
 			throw new RhinoComputeError(
 				`Invalid serverUrl: "${serverUrl}". Must be a valid URL. ` +
-				`Received error: ${err instanceof Error ? err.message : String(err)}`,
+					`Received error: ${err instanceof Error ? err.message : String(err)}`,
 				ErrorCodes.INVALID_CONFIG,
 				{
 					context: { serverUrl },
@@ -117,10 +115,7 @@ export default class ComputeServerStats {
 				headers: this.buildHeaders()
 			});
 			if (!response.ok) {
-				getLogger().warn(
-					'[ComputeServerStats] Failed to fetch active children:',
-					response.status
-				);
+				getLogger().warn('[ComputeServerStats] Failed to fetch active children:', response.status);
 				return null;
 			}
 

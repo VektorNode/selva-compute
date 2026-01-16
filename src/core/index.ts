@@ -66,5 +66,3 @@ export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
 // Configuration
 export type { ComputeConfig, RhinoModelUnit } from './types';
-
-

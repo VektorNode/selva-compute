@@ -1,5 +1,5 @@
-import { downloadFileData } from '@/features/file-handling';
-import { FileBaseInfo, FileData } from '@/features/file-handling/types';
+import { downloadFileData } from '@/features/grasshopper/file-handling';
+import { FileBaseInfo, FileData } from '@/features/grasshopper/file-handling/types';
 import type { MeshExtractionOptions } from '@/features/visualization/webdisplay/types';
 
 import { GrasshopperComputeResponse } from '../types';
@@ -27,7 +27,7 @@ export default class GrasshopperResponseProcessor {
 	constructor(
 		private readonly response: GrasshopperComputeResponse,
 		private readonly debug: boolean = false
-	) { }
+	) {}
 
 	/**
 	 * Extract all values in the response.

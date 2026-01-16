@@ -27,4 +27,9 @@ export {
 	decodeRhinoGeometry,
 	decodeRhinoObject
 } from './output';
-export type { GetValuesOptions, GetValuesResult, ParsedContext, DecodeRhinoOptions } from './output';
+export type {
+	GetValuesOptions,
+	GetValuesResult,
+	ParsedContext,
+	DecodeRhinoOptions
+} from './output';

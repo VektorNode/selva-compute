@@ -2,7 +2,6 @@
 	"$schema": "https://typedoc.org/schema.json",
 	"entryPoints": [
 		"./src/core/index.ts",
-		"./src/features/file-handling/index.ts",
 		"./src/features/visualization/index.ts",
 		"./src/grasshopper.ts",
 		"./src/index.ts"

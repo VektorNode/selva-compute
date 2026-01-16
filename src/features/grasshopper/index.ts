@@ -36,6 +36,12 @@ export { TreeBuilder } from './data-tree';
 export type { DataTreeValue } from './data-tree';
 
 // ============================================================================
+// FILE HANDLING
+// ============================================================================
+export { extractFilesFromComputeResponse, downloadFileData } from './file-handling';
+export type { ProcessedFile, FileData, FileBaseInfo } from './file-handling';
+
+// ============================================================================
 // TYPES
 // ============================================================================
 export type {
