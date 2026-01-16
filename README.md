@@ -1,3 +1,15 @@
+<!-- Badges -->
+<div align="center">
+
+[![npm version](https://img.shields.io/npm/v/selva-compute.svg)](https://www.npmjs.com/package/selva-compute)
+[![npm downloads](https://img.shields.io/npm/dm/selva-compute.svg)](https://www.npmjs.com/package/selva-compute)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-VektorNode/selva--compute-blue?logo=github)](https://github.com/VektorNode/selva-compute)
+
+</div>
+
 # selva-compute
 
 An intermediate-level TypeScript framework for building web applications with Rhino Compute and Grasshopper.

@@ -1,5 +1,18 @@
 # Contributing to selva-compute
 
+## Commits & Changesets
+
+- **Commit messages:** Use conventional format (`chore:`, `feat:`, `fix:`, `docs:`)
+- **Changesets:** Create one per significant change in `.changeset/` directory
+
+  ```markdown
+  ---
+  'selva-compute': patch
+  ---
+
+  Brief description of changes
+  ```
+
 ## Export Rules (Keep It Simple)
 
 ### ✅ DO
@@ -105,15 +118,3 @@ public async extractMeshesFromResponse(options?: MeshExtractionOptions) { }
 ```
 
 Use `@note` for optional enhancements, standard docstring for requirements.
-
-## Commits & Changesets
-
-- **Commit messages:** Use conventional format (`chore:`, `feat:`, `fix:`, `docs:`)
-- **Changesets:** Create one per significant change in `.changeset/` directory
-  ```markdown
-  ---
-  'selva-compute': patch
-  ---
-
-  Brief description of changes
-  ```
