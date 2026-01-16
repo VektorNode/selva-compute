@@ -1,4 +1,4 @@
-import { ComputeConfig, RhinoComputeError } from '@/core';
+import { ComputeConfig, RhinoComputeError, ErrorCodes } from '@/core';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
 import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
@@ -36,14 +36,7 @@ export async function fetchDefinitionIO(
 	const response = await fetchRhinoCompute<'io'>('io', payload, config);
 
 	if (!response || typeof response !== 'object') {
-		throw new RhinoComputeError('Invalid IO response structure', undefined, {
-			context: { response, definition }
-		});
-	}
-
-	// Validate structure
-	if (!response || typeof response !== 'object') {
-		throw new RhinoComputeError('Invalid IO response structure', undefined, {
+		throw new RhinoComputeError('Invalid IO response structure', ErrorCodes.INVALID_INPUT, {
 			context: { response, definition }
 		});
 	}

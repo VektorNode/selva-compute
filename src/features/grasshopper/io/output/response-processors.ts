@@ -31,8 +31,10 @@ const SYSTEM_TYPES = {
 	BOOL: 'System.Boolean'
 };
 
-const EXCLUDED_TYPES = ['WebDisplay'];
 const RHINO_GEOMETRY_PREFIX = 'Rhino.Geometry.';
+
+// Only relevant is Selva plugin is used
+const EXCLUDED_TYPES = ['WebDisplay'];
 const FILE_DATA_TYPE = 'FileData';
 
 // -----------------------------------------------------------------------------
