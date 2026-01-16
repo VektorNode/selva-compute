@@ -71,3 +71,49 @@ When adding/modifying exports:
 - [ ] No `export *` unless it's a feature aggregator
 - [ ] No unnecessary index.ts wrappers
 - [ ] Imports in other files use direct paths, not aggregators
+
+## Error Handling
+
+Use `RhinoComputeError` with static helper methods:
+
+```typescript
+// Generic validation error
+throw RhinoComputeError.validation('inputName', 'reason');
+
+// Specific cases
+throw RhinoComputeError.missingValues('inputName', 'Type');
+throw RhinoComputeError.invalidDefault('inputName', defaultValue, availableValues);
+throw RhinoComputeError.unknownParamType(paramType, paramName);
+throw RhinoComputeError.invalidStructure('inputName', 'expected structure');
+```
+
+Include proper error codes—never pass `undefined`.
+
+## Feature Dependencies
+
+If a feature requires Selva plugin components or custom compute, document it:
+
+```typescript
+/**
+ * Extract meshes from geometry results.
+ *
+ * **Requires:** Selva Display component in Grasshopper + custom VektorNode compute branch.
+ *
+ * @throws {RhinoComputeError} If three.js is not installed
+ */
+public async extractMeshesFromResponse(options?: MeshExtractionOptions) { }
+```
+
+Use `@note` for optional enhancements, standard docstring for requirements.
+
+## Commits & Changesets
+
+- **Commit messages:** Use conventional format (`chore:`, `feat:`, `fix:`, `docs:`)
+- **Changesets:** Create one per significant change in `.changeset/` directory
+  ```markdown
+  ---
+  'selva-compute': patch
+  ---
+
+  Brief description of changes
+  ```

@@ -1,5 +1,4 @@
 import { RhinoComputeError } from '@/core/errors';
-import { ValidationErrors } from '@/core/errors/error-factory';
 
 import { preProcessInputDefault } from './input-validators';
 import { PARSERS } from './input-parsers';
@@ -127,7 +126,7 @@ export function processInput(rawInput: InputParamSchema): InputParam {
 		// Get parser for this type
 		const parser = PARSERS[rawInput.paramType];
 		if (!parser) {
-			throw ValidationErrors.unknownParamType(rawInput.paramType, rawInput.name);
+			throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
 		}
 
 		// Apply type-specific parsing
@@ -181,7 +180,7 @@ export function processInput(rawInput: InputParamSchema): InputParam {
 				} as FileInputType;
 			default:
 				// This should be unreachable due to parser registry check above
-				throw ValidationErrors.unknownParamType(rawInput.paramType, rawInput.name);
+				throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
 		}
 	} catch (error) {
 		if (error instanceof RhinoComputeError) {

@@ -37,9 +37,9 @@ export type RhinoModelUnit =
 export interface ComputeConfig {
 	/** The base URL of the Rhino Compute server (e.g., http://localhost:6500) */
 	serverUrl: string;
-	/** Optional API key for authenticating with the server */
+	/** Optional API key for authenticating with the server (RhinoComputeKey) */
 	apiKey?: string;
-	/** Optional auth token (Bearer token) for authentication */
+	/** Optional Bearer token for authentication (e.g., when behind a proxy or API gateway) */
 	authToken?: string;
 	/** Enable debug logging to the console */
 	debug?: boolean;
