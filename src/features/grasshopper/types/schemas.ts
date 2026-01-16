@@ -41,10 +41,23 @@ export interface GrasshopperDefinitionSource {
 
 /**
  * Configuration for Grasshopper compute operations
- * Extends base config with Grasshopper-specific options
+ * Combines server config with optional Grasshopper-specific computation settings
+ *
+ * Note: The definition source (pointer/algo) is NOT part of config.
+ * Instead, pass the definition directly to methods like solve(), getIO(), etc.
  */
-export interface GrasshopperComputeConfig
-	extends ComputeConfig, GrasshopperBaseSchema, GrasshopperDefinitionSource {}
+export interface GrasshopperComputeConfig extends ComputeConfig {
+	/** Absolute tolerance used in computation */
+	absolutetolerance?: number | null;
+	/** Angular tolerance used in computation */
+	angletolerance?: number | null;
+	/** Model units used */
+	modelunits?: RhinoModelUnit | null;
+	/** Data version (7 or 8) */
+	dataversion?: 7 | 8 | null;
+	/** Whether to use cached solution */
+	cachesolve?: boolean | null;
+}
 
 /**
  * Raw I/O response schema from API (PascalCase)

@@ -37,6 +37,8 @@ export default class GrasshopperResponseProcessor {
 	 * @param options - Controls parsing behavior such as Rhino geometry decoding.
 	 * @returns Parsed Grasshopper output values.
 	 *
+	 * **Note:** Using `byId` only works with the custom VektorNode rhino.compute branch.
+	 *
 	 * @example
 	 * ```ts
 	 * const processor = new GrasshopperResponseProcessor(response);
@@ -96,8 +98,7 @@ export default class GrasshopperResponseProcessor {
 	 * All processing options (scaling, positioning, compression, etc.) can be customized.
 	 * The processor's debug flag is merged with options - explicit options take precedence.
 	 *
-	 * **Note:** This method dynamically imports three.js visualization modules. Ensure
-	 * three.js is installed as a peer dependency if you use this feature.
+	 * **Note:** This only works when using the **Selva Display** component in Grasshopper, and requires the custom branch of rhino.compute from VektorNode. This method dynamically imports three.js visualization modules. Ensure three.js is installed as a peer dependency if you use this feature.
 	 *
 	 * @param options - Configuration for mesh extraction and parsing. Overrides processor's debug flag if provided.
 	 * @returns Promise resolving to an array of Three.js mesh objects.
@@ -151,6 +152,8 @@ export default class GrasshopperResponseProcessor {
 	 * Extract internal file data structures from the response.
 	 * This includes Grasshopper-generated textures, JSON exports,
 	 * CAD formats, or any file structure packaged in the response.
+	 *
+	 * **Note:** This only works when using the **Block to File** and **Geometry To File** components from the Selva plugin in Grasshopper, and requires the custom branch of rhino.compute from VektorNode.
 	 *
 	 * @returns Raw file data entries.
 	 */

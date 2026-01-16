@@ -1,5 +1,3 @@
-import RhinoCompute from 'compute-rhino3d';
-
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
 
@@ -11,7 +9,7 @@ import type {
 } from '@/features/grasshopper/types';
 
 /**
- * Valid endpoints for Rhino Compute
+ * Valid endpoints for Rhino Compute (improved response type handling).
  */
 export type Endpoint = 'grasshopper' | 'io' | string;
 
@@ -86,7 +84,6 @@ function isLocalhost(serverUrl: string): boolean {
 
 function buildHeaders(requestId: string, config: ComputeConfig): HeadersInit {
 	const headers: HeadersInit = {
-		'User-Agent': `compute.rhino3d.js/${RhinoCompute.version}`,
 		'X-Request-ID': requestId,
 		'Content-Type': 'application/json',
 		...(config.authToken && { Authorization: config.authToken }),
@@ -204,30 +201,28 @@ async function handleResponse(
 // Main Function
 // ============================================================================
 
-//TODO: VALIDATE IF THIS DOC IS ACCURATE
-
 /**
  * Generic Rhino Compute fetch function.
  * Sends a POST request to any Compute endpoint with pre-prepared arguments.
  *
- * @public Use this for advanced low-level control over compute requests. For most use cases, prefer higher-level APIs.
+ * Use this for advanced, low-level control over compute requests. For most use cases, prefer higher-level APIs.
  *
+ * @typeParam E - The endpoint name (e.g., 'grasshopper', 'io'). Determines the response type for better type safety.
  * @param endpoint - The Compute API endpoint (e.g., 'grasshopper', 'io', 'mesh').
- * @param args - Pre-prepared arguments for the request.
+ * @param args - Pre-prepared arguments for the request body.
  * @param config - Compute configuration (server URL, API key, timeout, debug).
- * @returns The parsed JSON response from the server.
+ * @returns The parsed JSON response from the server, typed according to the endpoint.
  *
  * @example
- * ```typescript
+ * // Basic usage for the Grasshopper endpoint:
  * const response = await fetchRhinoCompute(
  *   'grasshopper',
  *   {
  *     pointer: { url: 'https://example.com/definition.gh' },
  *     values: [{ ParamName: 'x', InnerTree: { '0': [{ type: 'System.Double', data: 10 }] } }]
  *   },
- *   { serverUrl: 'https://compute.rhino3d.com', debug: true, timeoutMs: 30000 }
+ *   { serverUrl: 'https://my-server.com', debug: true, timeoutMs: 30000 }
  * );
- * ```
  */
 export async function fetchRhinoCompute<E extends Endpoint>(
 	endpoint: E,
@@ -298,7 +293,19 @@ export async function fetchRhinoCompute<E extends Endpoint>(
 			});
 		}
 
-		throw error;
+		// Wrap any unhandled errors
+		if (error instanceof RhinoComputeError) {
+			throw error;
+		}
+
+		throw new RhinoComputeError(
+			error instanceof Error ? error.message : String(error),
+			ErrorCodes.UNKNOWN_ERROR,
+			{
+				context: { endpoint, requestId },
+				originalError: error instanceof Error ? error : new Error(String(error))
+			}
+		);
 	} finally {
 		if (timeoutId !== null) clearTimeout(timeoutId);
 	}

@@ -1,5 +1,4 @@
 import { RhinoComputeError } from '@/core/errors';
-import { ValidationErrors } from '@/core/errors/error-factory';
 import { getLogger } from '@/core';
 import type { InputParamSchema } from '../../types';
 
@@ -330,7 +329,7 @@ function parseToObject(input: InputParamSchema): void {
  */
 function processValueListInput(input: InputParamSchema): void {
 	if (!input.values || typeof input.values !== 'object' || Object.keys(input.values).length === 0) {
-		throw ValidationErrors.missingValues(input.nickname || 'unnamed', 'ValueList');
+		throw RhinoComputeError.missingValues(input.nickname || 'unnamed', 'ValueList');
 	}
 
 	// Validate that default is one of the available values (if default exists)

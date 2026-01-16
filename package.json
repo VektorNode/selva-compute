@@ -82,7 +82,6 @@
 		"release": "changeset publish"
 	},
 	"dependencies": {
-		"compute-rhino3d": "0.13.0-beta",
 		"fflate": "^0.8.2",
 		"rhino3dm": "8.9.0"
 	},

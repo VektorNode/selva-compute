@@ -1,4 +1,4 @@
-import { ValidationErrors } from '@/core/errors/error-factory';
+import { RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core';
 import type { InputParamSchema } from '../../types';
 
@@ -26,7 +26,7 @@ export interface ValidationContext {
  */
 export function validateValueListValues(input: InputParamSchema): void {
 	if (!input.values || typeof input.values !== 'object' || Object.keys(input.values).length === 0) {
-		throw ValidationErrors.missingValues(input.nickname || 'unnamed', 'ValueList');
+		throw RhinoComputeError.missingValues(input.nickname || 'unnamed', 'ValueList');
 	}
 }
 
@@ -50,7 +50,7 @@ export function validateValueListDefault(input: InputParamSchema, warnOnly: bool
 		if (warnOnly) {
 			getLogger().warn(message);
 		} else {
-			throw ValidationErrors.invalidDefault(
+			throw RhinoComputeError.invalidDefault(
 				input.nickname || 'unnamed',
 				input.default,
 				Object.values(input.values)
@@ -73,7 +73,7 @@ export function validateParameterType(
 	inputName?: string
 ): void {
 	if (!validTypes.includes(paramType)) {
-		throw ValidationErrors.unknownParamType(paramType, inputName);
+		throw RhinoComputeError.unknownParamType(paramType, inputName);
 	}
 }
 
@@ -124,7 +124,7 @@ export function validateNumericConstraints(input: InputParamSchema): void {
 		input.maximum !== null
 	) {
 		if (input.minimum > input.maximum) {
-			throw ValidationErrors.invalid(
+			throw RhinoComputeError.validation(
 				input.nickname || 'unnamed',
 				`minimum (${input.minimum}) cannot be greater than maximum (${input.maximum})`
 			);
@@ -133,7 +133,7 @@ export function validateNumericConstraints(input: InputParamSchema): void {
 
 	if (input.atLeast !== undefined && input.atMost !== undefined) {
 		if (input.atLeast > input.atMost) {
-			throw ValidationErrors.invalid(
+			throw RhinoComputeError.validation(
 				input.nickname || 'unnamed',
 				`atLeast (${input.atLeast}) cannot be greater than atMost (${input.atMost})`
 			);
@@ -182,7 +182,7 @@ export function validateInputStructure(
 	inputName?: string
 ): void {
 	if (!input || typeof input !== 'object') {
-		throw ValidationErrors.invalidStructure(inputName || 'unknown', expectedStructure);
+		throw RhinoComputeError.invalidStructure(inputName || 'unknown', expectedStructure);
 	}
 }
 
@@ -202,7 +202,7 @@ export function validateRequiredProperties(
 	const missing = requiredProps.filter((prop) => !(prop in obj));
 
 	if (missing.length > 0) {
-		throw ValidationErrors.invalid(
+		throw RhinoComputeError.validation(
 			context.inputName,
 			`missing required properties: ${missing.join(', ')}`
 		);
