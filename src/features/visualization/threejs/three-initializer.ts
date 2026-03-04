@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { getLogger } from '@/core';
 import { ThreeInitializerOptions } from '../types';
@@ -47,7 +47,7 @@ export const initThree = function (
 	const eventHandlers =
 		config.events.enableEventHandlers !== false
 			? setupEventHandlers(canvas, scene, camera, controls, config)
-			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
+			: { dispose: () => { }, fitToView: () => { }, clearSelection: () => { } };
 
 	// Handle resizing
 	const { resize, dispose: disposeResize } = setupResponsiveResize(canvas, renderer, camera);
@@ -295,7 +295,11 @@ function createAnimationLoop(
 }
 
 /**
- * Sets up responsive resizing with improved performance and proper parent handling.
+ * Sets up responsive resizing with double-rAF for accurate post-layout measurements.
+ * Observes the parent container when present. When the canvas has no parent (fullscreen /
+ * position:fixed), observes the canvas directly so mobile fullscreen transitions are caught
+ * reliably. Observing both simultaneously is intentionally avoided: setSize() mutates the
+ * canvas dimensions and would cause redundant observer callbacks on every resize.
  */
 function setupResponsiveResize(
 	canvas: HTMLCanvasElement,
@@ -303,53 +307,60 @@ function setupResponsiveResize(
 	camera: THREE.PerspectiveCamera
 ): { resize: () => void; dispose: () => void } {
 	const parent = canvas.parentElement;
-	let resizeTimeout: NodeJS.Timeout;
+	let rafId: number | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 
-	const getSize = () => {
-		if (parent) {
-			return {
-				width: parent.clientWidth,
-				height: parent.clientHeight
-			};
-		} else {
-			return {
-				width: window.innerWidth,
-				height: window.innerHeight
-			};
+	const getSize = () =>
+		parent
+			? { width: parent.clientWidth, height: parent.clientHeight }
+			: { width: window.innerWidth, height: window.innerHeight };
+
+	const applyResize = () => {
+		const { width, height } = getSize();
+		if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
+			renderer.setSize(width, height, false);
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
 		}
 	};
 
 	const handleResize = () => {
-		if (resizeTimeout) {
-			clearTimeout(resizeTimeout);
-		}
+		// Cancel any pending rAF
+		if (rafId !== null) cancelAnimationFrame(rafId);
 
-		resizeTimeout = setTimeout(() => {
-			const { width, height } = getSize();
-
-			// Only update if size actually changed
-			if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
-				renderer.setSize(width, height, false);
-				camera.aspect = width / height;
-				camera.updateProjectionMatrix();
-			}
-		}, 16); // ~60fps throttling
+		// Double rAF: first frame lets the browser finish layout,
+		// second frame guarantees clientWidth/Height are stable and accurate.
+		// This fixes mobile fullscreen transitions where setTimeout(fn, 16)
+		// fires before the new layout is fully committed.
+		rafId = requestAnimationFrame(() => {
+			rafId = requestAnimationFrame(() => {
+				rafId = null;
+				applyResize();
+			});
+		});
 	};
 
-	// Set up the appropriate resize observer
-	if (parent && typeof ResizeObserver !== 'undefined') {
-		// Use ResizeObserver for parent container
+	if (typeof ResizeObserver !== 'undefined') {
 		resizeObserver = new ResizeObserver(handleResize);
-		resizeObserver.observe(parent);
+		if (parent) {
+			// Normal case: observe parent container; setSize() changes canvas attrs but
+			// the parent is not affected, so no feedback loop.
+			resizeObserver.observe(parent);
+		} else {
+			// Fullscreen / position:fixed case: observe canvas directly.
+			// The guard in applyResize (domElement.width !== width) prevents
+			// infinite loops caused by setSize() mutating the canvas dimensions.
+			resizeObserver.observe(canvas);
+		}
 	} else {
-		// Fallback to window resize for fullscreen or older browsers
+		// Fallback for older browsers
 		window.addEventListener('resize', handleResize);
 	}
 
 	const dispose = () => {
-		if (resizeTimeout) {
-			clearTimeout(resizeTimeout);
+		if (rafId !== null) {
+			cancelAnimationFrame(rafId);
+			rafId = null;
 		}
 		if (resizeObserver) {
 			resizeObserver.disconnect();
@@ -366,7 +377,7 @@ function setupResponsiveResize(
  */
 function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
 	if (config.environment.enableEnvironmentLighting) {
-		new RGBELoader().load(
+		new HDRLoader().load(
 			config.environment.hdrPath || '/baseHDR.hdr',
 			function (envMap) {
 				envMap.mapping = THREE.EquirectangularReflectionMapping;
