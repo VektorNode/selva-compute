@@ -1,0 +1,10 @@
+{
+  "mode": "exit",
+  "tag": "beta",
+  "initialVersions": {
+    "selva-compute": "1.1.2"
+  },
+  "changesets": [
+    "fix-viewer-responsive-resize"
+  ]
+}
