@@ -1,5 +1,11 @@
 # selva-compute
 
+## 1.1.4
+
+### Patch Changes
+
+- c7d91be: Add Color input parameter type support for Grasshopper definitions. Color inputs are now properly parsed and normalized as RGB strings (e.g., "166, 111, 111"), with surrounding quotes removed during processing.
+
 ## 1.1.3
 
 ### Patch Changes
