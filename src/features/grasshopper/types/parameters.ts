@@ -108,6 +108,14 @@ export interface FileInputType extends BaseInputType {
 }
 
 /**
+ * Color input type (stored as hex string)
+ */
+export interface ColorInputType extends BaseInputType {
+	paramType: 'Color';
+	default: DefaultValue<string>;
+}
+
+/**
  * Discriminated union of all input parameter types
  */
 export type InputParam =
@@ -116,4 +124,5 @@ export type InputParam =
 	| TextInputType
 	| ValueListInputType
 	| GeometryInputType
-	| FileInputType;
+	| FileInputType
+	| ColorInputType;
