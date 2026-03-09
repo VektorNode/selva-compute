@@ -25,6 +25,7 @@ export type {
 	GeometryInputType,
 	ValueListInputType,
 	FileInputType,
+	ColorInputType,
 	InputParam
 } from './parameters';
 

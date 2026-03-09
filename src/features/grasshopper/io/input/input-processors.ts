@@ -13,7 +13,8 @@ import type {
 	InputParamSchema,
 	TextInputType,
 	ValueListInputType,
-	FileInputType
+	FileInputType,
+	ColorInputType
 } from '../../types';
 
 /**
@@ -57,6 +58,12 @@ function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType)
 				paramType: 'File',
 				default: rawInput.atMost > 1 ? [null] : null
 			} as FileInputType;
+		case 'Color':
+			return {
+				...baseInput,
+				paramType: 'Color',
+				default: rawInput.atMost > 1 ? ['0, 0, 0'] : '0, 0, 0'
+			} as ColorInputType;
 		default:
 			return {
 				...baseInput,
@@ -178,6 +185,12 @@ export function processInput(rawInput: InputParamSchema): InputParam {
 					acceptedFormats: rawInput.acceptedFormats,
 					default: rawInput.default as object | string | undefined
 				} as FileInputType;
+			case 'Color':
+				return {
+					...baseInput,
+					paramType: 'Color',
+					default: rawInput.default as string | undefined
+				} as ColorInputType;
 			default:
 				// This should be unreachable due to parser registry check above
 				throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);

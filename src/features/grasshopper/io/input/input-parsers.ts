@@ -110,6 +110,34 @@ function createTextTransformer(): ValueTransformer<string> {
 }
 
 /**
+ * Creates a color value transformer that normalizes RGB strings
+ */
+function createColorTransformer(): ValueTransformer<string> {
+	return (value: unknown): string | null => {
+		if (typeof value === 'string') {
+			// Remove surrounding quotes if present
+			let cleaned = value.trim();
+			if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+				cleaned = cleaned.slice(1, -1).trim();
+			}
+			// Return as-is if it's a valid RGB string
+			return cleaned;
+		}
+		return null;
+	};
+}
+
+/**
+ * Processes color input parameters
+ */
+function processColorInput(input: InputParamSchema): void {
+	processInputValue(input, {
+		transform: createColorTransformer(),
+		setUndefinedOnEmpty: false
+	});
+}
+
+/**
  * Creates an object value transformer that parses JSON strings
  */
 function createObjectTransformer(inputName: string = 'unknown'): ValueTransformer<object> {
@@ -356,7 +384,8 @@ export const PARSERS: Record<string, (input: InputParamSchema) => void> = {
 	Text: processTextInput,
 	ValueList: processValueListInput,
 	Geometry: parseToObject,
-	File: parseToObject
+	File: parseToObject,
+	Color: processColorInput
 };
 
 // Export parser functions for direct use
@@ -365,5 +394,6 @@ export {
 	processBooleanInput,
 	processTextInput,
 	parseToObject,
-	processValueListInput
+	processValueListInput,
+	processColorInput
 };
