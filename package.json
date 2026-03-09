@@ -1,6 +1,6 @@
 {
 	"name": "selva-compute",
-	"version": "1.1.3",
+	"version": "1.1.4",
 	"packageManager": "pnpm@10.18.0",
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",
