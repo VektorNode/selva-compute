@@ -31,7 +31,7 @@ export const initThree = function (
 
 	// Initialize core components
 	const scene = createScene(config);
-	const camera = createCamera(config);
+	const camera = createCamera(config, canvas);
 	const renderer = setupRenderer(canvas, config);
 	const controls = setupControls(camera, canvas, config);
 
@@ -231,10 +231,12 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			onBackgroundClicked: options.events?.onBackgroundClicked,
 			onObjectSelected: options.events?.onObjectSelected,
 			onMeshMetadataClicked: options.events?.onMeshMetadataClicked,
+			onMeshDoubleClicked: options.events?.onMeshDoubleClicked,
 			selectionColor: options.events?.selectionColor || '#ff0000', // Default to red
 			enableEventHandlers: options.events?.enableEventHandlers ?? true,
 			enableKeyboardControls: options.events?.enableKeyboardControls ?? true,
-			enableClickToFocus: options.events?.enableClickToFocus ?? true
+			enableClickToFocus: options.events?.enableClickToFocus ?? true,
+			enableDoubleClickZoom: options.events?.enableDoubleClickZoom ?? true
 		}
 	};
 }
@@ -245,13 +247,6 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
 	const scene = new THREE.Scene();
 
-	// Clear existing children except floor
-	scene.children.forEach((child) => {
-		if (child.userData.id !== 'floor') {
-			scene.remove(child);
-		}
-	});
-
 	// Set background color
 	const bgColor =
 		typeof config.environment.backgroundColor === 'string'
@@ -260,6 +255,37 @@ function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
 	scene.background = bgColor || null;
 
 	return scene;
+}
+
+/**
+ * Smoothly animates the camera to a new position and target using an ease-out curve.
+ */
+function animateCameraTo(
+	camera: THREE.PerspectiveCamera,
+	controls: OrbitControls,
+	toPosition: THREE.Vector3,
+	toTarget: THREE.Vector3,
+	durationMs = 200
+): void {
+	const fromPosition = camera.position.clone();
+	const fromTarget = controls.target.clone();
+	const startTime = performance.now();
+
+	// Ease-out cubic
+	const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+	const tick = () => {
+		const elapsed = performance.now() - startTime;
+		const t = easeOut(Math.min(elapsed / durationMs, 1));
+
+		camera.position.lerpVectors(fromPosition, toPosition, t);
+		controls.target.lerpVectors(fromTarget, toTarget, t);
+		controls.update();
+
+		if (t < 1) requestAnimationFrame(tick);
+	};
+
+	requestAnimationFrame(tick);
 }
 
 /**
@@ -276,8 +302,8 @@ function createAnimationLoop(
 	const animate = function () {
 		animationId = requestAnimationFrame(animate);
 
-		// Update controls if damping is enabled
-		if (controls.enableDamping) {
+		// Update controls if damping or auto-rotate is enabled
+		if (controls.enableDamping || controls.autoRotate) {
 			controls.update();
 		}
 
@@ -317,8 +343,17 @@ function setupResponsiveResize(
 
 	const applyResize = () => {
 		const { width, height } = getSize();
-		if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
-			renderer.setSize(width, height, false);
+		if (width === 0 || height === 0) return;
+
+		const pixelRatio = Math.min(window.devicePixelRatio, 2);
+		const currentW = Math.round(renderer.domElement.clientWidth * pixelRatio);
+		const currentH = Math.round(renderer.domElement.clientHeight * pixelRatio);
+		const newW = Math.round(width * pixelRatio);
+		const newH = Math.round(height * pixelRatio);
+
+		if (currentW !== newW || currentH !== newH) {
+			renderer.setPixelRatio(pixelRatio);
+			renderer.setSize(width, height, true);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
 		}
@@ -389,9 +424,6 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 			undefined,
 			function (error) {
 				getLogger().warn('HDR texture could not be loaded, falling back to basic lighting:', error);
-				// Add basic ambient light as fallback
-				const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
-				scene.add(ambientLight);
 			}
 		);
 	}
@@ -480,10 +512,11 @@ function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>)
 /**
  * Creates and configures the camera with proper aspect ratio.
  */
-function createCamera(config: Required<ThreeInitializerOptions>): THREE.PerspectiveCamera {
-	// Get proper aspect ratio from canvas parent or window
-	const canvas = document.querySelector('canvas');
-	const parent = canvas?.parentElement;
+function createCamera(
+	config: Required<ThreeInitializerOptions>,
+	canvas: HTMLCanvasElement
+): THREE.PerspectiveCamera {
+	const parent = canvas.parentElement;
 	const width = parent ? parent.clientWidth : window.innerWidth;
 	const height = parent ? parent.clientHeight : window.innerHeight;
 
@@ -532,7 +565,7 @@ function setupRenderer(
 		canvas.style.display = 'block';
 	}
 
-	renderer.setSize(width, height, false);
+	renderer.setSize(width, height, true);
 	renderer.setPixelRatio(config.render.pixelRatio || Math.min(window.devicePixelRatio, 2));
 
 	// Enhanced shadow settings
@@ -684,6 +717,37 @@ function setupEventHandlers(
 		}
 	};
 
+	// Handle double-click to zoom into mesh
+	const handleDoubleClick = (event: MouseEvent) => {
+		const rect = canvas.getBoundingClientRect();
+		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+		raycaster.setFromCamera(mouse, camera);
+		const intersects = raycaster.intersectObjects(scene.children, true);
+
+		if (intersects.length === 0) return;
+
+		const target = intersects[0].object;
+		config.events?.onMeshDoubleClicked?.(target);
+
+		if (!config.events?.enableDoubleClickZoom) return;
+
+		const box = new THREE.Box3().setFromObject(target);
+		if (box.isEmpty()) return;
+
+		const center = box.getCenter(new THREE.Vector3());
+		const size = box.getSize(new THREE.Vector3());
+		const maxDim = Math.max(size.x, size.y, size.z);
+		const fov = camera.fov * (Math.PI / 180);
+		const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.5;
+
+		const direction = camera.position.clone().sub(controls.target).normalize();
+		const targetPosition = center.clone().add(direction.multiplyScalar(distance));
+
+		animateCameraTo(camera, controls, targetPosition, center);
+	};
+
 	// Handle keyboard events
 	const handleKeydown = (event: KeyboardEvent) => {
 		if (!config.events?.enableKeyboardControls) return;
@@ -708,6 +772,7 @@ function setupEventHandlers(
 	if (config.events?.enableClickToFocus) {
 		canvas.addEventListener('mousedown', handleMouseDown);
 		canvas.addEventListener('click', handleCanvasClick);
+		canvas.addEventListener('dblclick', handleDoubleClick);
 	}
 
 	if (config.events?.enableKeyboardControls) {
@@ -721,6 +786,7 @@ function setupEventHandlers(
 	const dispose = () => {
 		canvas.removeEventListener('mousedown', handleMouseDown);
 		canvas.removeEventListener('click', handleCanvasClick);
+		canvas.removeEventListener('dblclick', handleDoubleClick);
 		canvas.removeEventListener('keydown', handleKeydown);
 		clearSelection();
 	};
@@ -753,8 +819,8 @@ function setupControls(
 	controls.autoRotateSpeed = config.controls.autoRotateSpeed || 0.5;
 
 	// Configure interaction limits
-	controls.enableZoom = config.controls.enableZoom || true;
-	controls.enablePan = config.controls.enablePan || true;
+	controls.enableZoom = config.controls.enableZoom ?? true;
+	controls.enablePan = config.controls.enablePan ?? true;
 	controls.minDistance = config.controls.minDistance || 0.001;
 	controls.maxDistance = config.controls.maxDistance || Infinity;
 
