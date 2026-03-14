@@ -25,6 +25,13 @@ export interface GrasshopperBaseSchema {
 	dataversion?: 7 | 8 | null;
 	/** Whether to use cached solution */
 	cachesolve?: boolean | null;
+	/**
+	 * Data format for response
+	 * - 0: Hops (legacy)
+	 * - 1: Grasshopper ( GH_Structure<IGH_Goo>) TODO: Check on how to convert thisclea
+	 * @requires Rhino 9.0 or later
+	 */
+	dataformat?: 0 | 1 | null;
 }
 
 /**
@@ -57,6 +64,13 @@ export interface GrasshopperComputeConfig extends ComputeConfig {
 	dataversion?: 7 | 8 | null;
 	/** Whether to use cached solution */
 	cachesolve?: boolean | null;
+	/**
+	 * Data format for response
+	 * - 0: Default binary format (legacy)
+	 * - 1: JSON format (more human-readable, Rhino 9+)
+	 * @requires Rhino 9.0 or later
+	 */
+	dataformat?: 0 | 1 | null;
 }
 
 /**

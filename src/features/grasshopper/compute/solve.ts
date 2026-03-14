@@ -106,4 +106,5 @@ export function applyOptionalComputeSettings(
 	if (options.angletolerance !== null) arglist.angletolerance = options.angletolerance;
 	if (options.absolutetolerance !== null) arglist.absolutetolerance = options.absolutetolerance;
 	if (options.dataversion !== null) arglist.dataversion = options.dataversion;
+	if (options.dataformat !== null) arglist.dataformat = options.dataformat;
 }

@@ -138,6 +138,9 @@ function forEachTreeItem(
  * extracts individual data items, and aggregates them into a structured result object.
  * Values can be mapped by their parameter names or unique identifiers.
  *
+ * When dataformat: 1 is used, the values are in the base64-encoded values-grasshopper field
+ * and need to be decoded first. )
+ *
  * @template T - The type of the resulting parsed context values.
  * @param response - The raw response object received from the Grasshopper Compute service.
  * @param byId - Whether to use the parameter's unique ID as the key (true) or its name (false).
@@ -154,6 +157,17 @@ export function getValues<T = ParsedContext>(
 ): GetValuesResult<T> {
 	const { parseValues = true, rhino, stringOnly = false } = options;
 	const result: ParsedContext = {};
+
+	// Handle dataformat: 1 (Rhino 9+) where values array is empty
+	if (
+		(!response.values || response.values.length === 0) &&
+		(response as any)['values-grasshopper']?.Data
+	) {
+		// When using dataformat: 1, the actual data is in the base64 field
+		// For now, we return empty values as the Rhino 9 format requires special handling
+		// This is a placeholder for future Rhino 9 support
+		return { values: result as T };
+	}
 
 	for (const param of response.values) {
 		forEachTreeItem(param.InnerTree, (item) => {
