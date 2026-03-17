@@ -1,5 +1,11 @@
 # selva-compute
 
+## 1.3.0
+
+### Minor Changes
+
+- 7680657: Expose `toCamelCase` and `camelcaseKeys` utilities in the public core API.
+
 ## 1.2.0
 
 ### Minor Changes
