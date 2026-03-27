@@ -52,6 +52,8 @@ export async function solveGrasshopperDefinition(
 		delete (result as any).pointer;
 	}
 
+	normalizeResponseKeys(result);
+
 	return result;
 }
 
@@ -72,8 +74,6 @@ export function prepareGrasshopperArgs(
 	dataTree: DataTree[]
 ): GrasshopperRequestSchema {
 	const args: GrasshopperRequestSchema = {
-		algo: null,
-		pointer: null,
 		values: dataTree
 	};
 
@@ -95,6 +95,29 @@ export function prepareGrasshopperArgs(
 }
 
 /**
+ * Rhino 8 returns camelCase keys (e.g. `modelUnits`, `cacheSolve`),
+ * while Rhino 9 returns lowercase (e.g. `modelunits`, `cachesolve`).
+ * Normalize to lowercase so consumers only need to handle one format.
+ * @internal
+ */
+const CAMEL_TO_LOWER: Record<string, string> = {
+	absoluteTolerance: 'absolutetolerance',
+	angleTolerance: 'angletolerance',
+	modelUnits: 'modelunits',
+	dataVersion: 'dataversion',
+	cacheSolve: 'cachesolve',
+};
+
+function normalizeResponseKeys(result: Record<string, any>): void {
+	for (const [camel, lower] of Object.entries(CAMEL_TO_LOWER)) {
+		if (camel in result && !(lower in result)) {
+			result[lower] = result[camel];
+			delete result[camel];
+		}
+	}
+}
+
+/**
  * @internal
  */
 export function applyOptionalComputeSettings(
@@ -106,5 +129,6 @@ export function applyOptionalComputeSettings(
 	if (options.angletolerance !== null) arglist.angletolerance = options.angletolerance;
 	if (options.absolutetolerance !== null) arglist.absolutetolerance = options.absolutetolerance;
 	if (options.dataversion !== null) arglist.dataversion = options.dataversion;
-	if (options.dataformat !== null) arglist.dataformat = options.dataformat;
+	// dataformat is required by Rhino 9+; default to 0 (legacy Hops format) if not specified
+	arglist.dataformat = options.dataformat ?? 0;
 }

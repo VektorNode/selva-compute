@@ -95,8 +95,19 @@ export default class ComputeServerStats {
 		try {
 			const response = await fetch(url, init);
 
+			if (response.status === 401 || response.status === 403) {
+				throw new RhinoComputeError(
+					`Authentication failed (HTTP ${response.status}). Check that your API key is correct.`,
+					ErrorCodes.AUTH_ERROR,
+					{ context: { serverUrl: this.serverUrl, status: response.status } }
+				);
+			}
+
 			return response.ok;
 		} catch (err) {
+			if (err instanceof RhinoComputeError) {
+				throw err;
+			}
 			getLogger().debug('[ComputeServerStats] Fetch error:', err);
 			return false;
 		}

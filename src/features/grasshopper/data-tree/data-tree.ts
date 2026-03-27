@@ -8,10 +8,11 @@ export type DataTreeValue = string | number | boolean | object | null;
 
 /**
  * Simple data item for compute requests (not to be confused with DataItem interface for responses).
- * Note: While TypeScript defines this as string, Rhino Compute accepts boolean/number primitives in JSON.
+ * The server's ResthopperObject expects both a type hint and a string-encoded data field.
  */
 interface ComputeDataItem {
-	data: string | boolean | number;
+	type: string;
+	data: string;
 }
 
 /**
@@ -57,6 +58,7 @@ export class TreeBuilder {
 		}
 
 		const dataItems: ComputeDataItem[] = items.map((item) => ({
+			type: TreeBuilder.getResthopperType(item),
 			data: TreeBuilder.serializeValue(item)
 		}));
 
@@ -197,7 +199,7 @@ export class TreeBuilder {
 		return inputs
 			.filter((input) => TreeBuilder.hasValidValue(input.default))
 			.map((input) => {
-				const tree = new TreeBuilder(input.nickname || 'unnamed');
+				const tree = new TreeBuilder(input.nickname || input.name || 'unnamed');
 				const value = input.default;
 
 				// Handle tree access (complex TreeBuilder structure)
@@ -517,16 +519,32 @@ export class TreeBuilder {
 
 	/**
 	 * Serialize a value for compute requests.
-	 * Preserves booleans and numbers as primitives for proper Grasshopper parameter handling.
+	 * All values are string-encoded as expected by the server's ResthopperObject format.
 	 */
-	private static serializeValue(value: DataTreeValue): string | boolean | number {
-		if (typeof value === 'boolean') return value;
-		if (typeof value === 'number') return value;
-		if (typeof value === 'string') return value;
+	private static serializeValue(value: DataTreeValue): string {
+		if (typeof value === 'boolean') return value.toString();
+		if (typeof value === 'number') return value.toString();
+		if (typeof value === 'string') return JSON.stringify(value);
 		if (typeof value === 'object' && value !== null) {
 			return JSON.stringify(value);
 		}
 		return String(value);
+	}
+
+	/**
+	 * Get the Resthopper/.NET type string for a value.
+	 */
+	private static getResthopperType(value: DataTreeValue): string {
+		if (typeof value === 'number') {
+			return Number.isInteger(value) ? 'System.Int32' : 'System.Double';
+		}
+		if (typeof value === 'boolean') return 'System.Boolean';
+		if (typeof value === 'string') return 'System.String';
+		if (typeof value === 'object' && value !== null) {
+			if ('X' in value && 'Y' in value && 'Z' in value) return 'Rhino.Geometry.Point3d';
+			return 'System.String';
+		}
+		return 'System.String';
 	}
 
 	/**

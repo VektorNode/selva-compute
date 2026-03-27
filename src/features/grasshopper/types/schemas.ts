@@ -92,6 +92,8 @@ export interface IoResponseSchema {
 	outputs: OutputParamSchema[];
 	warnings: any[];
 	errors: any[];
+	/** Supported data formats (Rhino 9+) */
+	supporteddataformats?: number[];
 }
 
 /**
@@ -124,6 +126,8 @@ export interface GrasshopperComputeResponse
 	recursionlevel?: number;
 	/** Output values organized by parameter */
 	values: DataTree[];
+	/** GH_IO binary archive output (when dataformat: 1, Rhino 9+) */
+	'values-grasshopper'?: Record<string, unknown> | null;
 	/** Computation errors */
 	errors?: string[];
 	/** Computation warnings */
