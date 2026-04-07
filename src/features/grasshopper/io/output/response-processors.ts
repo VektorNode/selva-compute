@@ -196,7 +196,14 @@ export function extractFileData(response: GrasshopperComputeResponse): FileData[
 			if (!item.type.includes(FILE_DATA_TYPE)) return;
 
 			const parsed = tryDecodeJSON(item.data);
-			if (parsed && parsed.FileName && parsed.FileType && parsed.Data) {
+			if (
+				parsed &&
+				parsed.fileName &&
+				parsed.fileType &&
+				parsed.data &&
+				typeof parsed.isBase64Encoded === 'boolean' &&
+				typeof parsed.subFolder === 'string'
+			) {
 				output.push(parsed as FileData);
 			}
 		});
