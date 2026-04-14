@@ -130,9 +130,13 @@ export async function parseMeshBatchObject(
 		for (const group of batch.groups) {
 			if (mergeByMaterial && group.meshes.length > 1) {
 				const mergedMesh = createMergedMesh(group, vertices, faces, materials);
+				mergedMesh.userData.sourceComponentId = batch.sourceComponentId ?? null;
 				meshes.push(mergedMesh);
 			} else {
 				const individualMeshes = createIndividualMeshes(group, vertices, faces, materials);
+				for (const mesh of individualMeshes) {
+					mesh.userData.sourceComponentId = batch.sourceComponentId ?? null;
+				}
 				meshes.push(...individualMeshes);
 			}
 		}
@@ -240,16 +244,26 @@ function createMergedMesh(
 	geometry.computeVertexNormals();
 
 	const threeMesh = new THREE.Mesh(geometry, materials[group.materialId]);
-	// Use the first mesh's name, or combine names if multiple meshes
+	// Use the first mesh's name for the merged mesh
+	const firstMesh = group.meshes[0];
 	const meshNames = group.meshes.map((m) => m.name).filter((name) => name && name.length > 0);
 	threeMesh.name = meshNames.length > 0 ? meshNames[0] : `merged_material_${group.materialId}`;
 	threeMesh.castShadow = true;
 	threeMesh.receiveShadow = true;
 
-	const allMetadata = group.meshes.map((m) => m.metadata).filter((m) => m);
-	if (allMetadata.length > 0) {
-		threeMesh.userData.mergedMetadata = allMetadata;
-	}
+	// Structured userData — merged meshes carry data from the first mesh in the group
+	threeMesh.userData = {
+		name: threeMesh.name,
+		layer: firstMesh?.layer ?? '',
+		originalIndex: firstMesh?.originalIndex ?? 0,
+		metadata: firstMesh?.metadata ?? {},
+		// Remaining meshes in the merged group, for reference
+		mergedFrom: group.meshes.slice(1).map((m) => ({
+			name: m.name,
+			layer: m.layer,
+			originalIndex: m.originalIndex
+		}))
+	};
 
 	return threeMesh;
 }
@@ -290,9 +304,12 @@ function createIndividualMeshes(
 
 		const mesh = new THREE.Mesh(geometry, materials[group.materialId]);
 		mesh.name = meshMeta.name;
-		if (meshMeta.metadata) {
-			mesh.userData = { ...mesh.userData, ...meshMeta.metadata };
-		}
+		mesh.userData = {
+			name: meshMeta.name,
+			layer: meshMeta.layer ?? '',
+			originalIndex: meshMeta.originalIndex,
+			metadata: meshMeta.metadata ?? {}
+		};
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 
