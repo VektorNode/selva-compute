@@ -1,5 +1,13 @@
 # selva-compute
 
+## 1.4.1
+
+### Patch Changes
+
+- a9c7ec1: fix: filter invisible objects from raycaster intersections
+
+  Click and mousemove event handlers now exclude objects where `visible` is `false` from raycaster hit results, preventing interactions with hidden scene objects.
+
 ## 1.4.0
 
 ### Minor Changes
