@@ -577,7 +577,9 @@ function setupEventHandlers(
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
 		raycaster.setFromCamera(mouse, camera);
-		const intersects = raycaster.intersectObjects(scene.children, true);
+		const intersects = raycaster
+			.intersectObjects(scene.children, true)
+			.filter((i) => i.object.visible);
 
 		if (intersects.length > 0) {
 			const clickedObject = intersects[0].object;
@@ -616,7 +618,9 @@ function setupEventHandlers(
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
 		raycaster.setFromCamera(mouse, camera);
-		const intersects = raycaster.intersectObjects(scene.children, true);
+		const intersects = raycaster
+			.intersectObjects(scene.children, true)
+			.filter((i) => i.object.visible);
 
 		if (intersects.length === 0) return;
 
