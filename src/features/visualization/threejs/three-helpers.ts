@@ -10,14 +10,14 @@ const CAMERA_CONFIG = {
 	NEAR_PLANE_FACTOR: {
 		TINY: 0.0001,
 		SMALL: 0.001,
-		NORMAL: 0.01,
+		NORMAL: 0.01
 	},
 	FAR_PLANE_FACTOR: {
 		HUGE: 100,
 		LARGE: 50,
-		NORMAL: 20,
+		NORMAL: 20
 	},
-	InitialDistanceMultiplier: 4,
+	INITIAL_DISTANCE_MULTIPLIER: 4
 };
 
 /**
@@ -77,7 +77,7 @@ export function updateScene(
 
 	// Only reposition camera and controls on first frame
 	if (!initialPositionSet) {
-		const distance = maxDim * CAMERA_CONFIG.InitialDistanceMultiplier;
+		const distance = maxDim * CAMERA_CONFIG.INITIAL_DISTANCE_MULTIPLIER;
 
 		camera.position.set(center.x + distance * 0.8, center.y + distance, center.z + distance * 1.2);
 		controls.target.copy(center);
@@ -128,7 +128,6 @@ export function parseColor(colorString: string): THREE.Color {
 	if (trimmed.includes(',')) {
 		const rgb = trimmed.split(',').map((c) => parseInt(c.trim(), 10));
 		if (rgb.length === 3 && rgb.every((n) => !isNaN(n) && n >= 0 && n <= 255)) {
-			// THREE.Color constructor accepts r, g, b in range [0, 1]
 			return new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
 		}
 	}
@@ -145,17 +144,16 @@ export function parseColor(colorString: string): THREE.Color {
 export function applyOffset(meshes: THREE.Mesh[], offsetY: number): void {
 	meshes.forEach((mesh) => {
 		mesh.position.y -= offsetY;
-		// Ensure world matrix is pending update if needed
-		mesh.updateMatrix();
 	});
 }
 
 /**
- * Computes the combined AI world-axis-aligned bounding box of a set of meshes.
+ * Computes the combined world-axis-aligned bounding box of a set of meshes.
  * Correctly accounts for mesh transformations (rotation, position, scale).
  */
 export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
 	const combinedBoundingBox = new THREE.Box3();
+	if (meshes.length === 0) return combinedBoundingBox;
 	meshes.forEach((mesh) => {
 		// Ensure the world matrix is up to date before calculating the box
 		mesh.updateMatrixWorld(true);
@@ -166,97 +164,36 @@ export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
 }
 
 /**
- * Updates shadow camera bounds to match scene geometry.
- * This prevents shadow artifacts and ensures proper shadow coverage.
- * @param scene - The scene containing geometry.
- * @param directionalLight - The light to update.
- * @param optionalBounds - Optional pre-calculated bounds to avoid scene traversal.
- */
-export function updateShadowCameraBounds(
-	scene: THREE.Scene,
-	directionalLight: THREE.DirectionalLight,
-	optionalBounds?: THREE.Box3
-): void {
-	let bbox = optionalBounds;
-
-	if (!bbox) {
-		bbox = new THREE.Box3();
-		scene.traverse((object) => {
-			if (object instanceof THREE.Mesh && object.userData.id !== 'floor') {
-				// Use setFromObject to ensure world transforms are respected
-				const objBbox = new THREE.Box3().setFromObject(object);
-				bbox!.union(objBbox);
-			}
-		});
-	}
-
-	if (!bbox || bbox.isEmpty()) return;
-
-	const size = bbox.getSize(new THREE.Vector3());
-	const center = bbox.getCenter(new THREE.Vector3());
-	const maxDim = Math.max(size.x, size.y, size.z);
-
-	// Position light relative to scene center
-	const lightDistance = maxDim * 2;
-	directionalLight.position.set(
-		center.x + lightDistance * 0.5,
-		center.y + lightDistance,
-		center.z + lightDistance * 0.5
-	);
-	directionalLight.target.position.copy(center);
-
-	// Adjust shadow camera bounds to scene size with padding
-	const padding = maxDim * 0.2;
-	directionalLight.shadow.camera.left = -maxDim / 2 - padding;
-	directionalLight.shadow.camera.right = maxDim / 2 + padding;
-	directionalLight.shadow.camera.top = maxDim / 2 + padding;
-	directionalLight.shadow.camera.bottom = -maxDim / 2 - padding;
-	directionalLight.shadow.camera.near = 0.1;
-	directionalLight.shadow.camera.far = lightDistance * 3;
-
-	// Improve shadow quality for extreme scales
-	if (maxDim > CAMERA_CONFIG.LARGE_THRESHOLD) {
-		directionalLight.shadow.bias = -0.001;
-		directionalLight.shadow.normalBias = 0.05;
-	} else {
-		directionalLight.shadow.bias = -0.0001;
-		directionalLight.shadow.normalBias = 0.02;
-	}
-
-	directionalLight.shadow.camera.updateProjectionMatrix();
-}
-
-/**
- * Clears the given THREE.Scene by removing all meshes and disposing of associated resources.
- * @param scene - The THREE.Scene to clear.
+ * Clears the given THREE.Scene by removing all non-floor top-level children and
+ * recursively disposing of their geometry and materials.
+ *
+ * Removes at the top level rather than traversing for meshes, so parent Groups
+ * don't accumulate as ghost nodes after their mesh children are disposed.
  */
 function clearScene(scene: THREE.Scene): void {
-	const objectsToRemove: THREE.Object3D[] = [];
+	// Snapshot children — we mutate the array via removeFromParent during iteration
+	const topLevel = [...scene.children];
 
-	// Collect all meshes except the floor
-	scene.traverse((child: THREE.Object3D) => {
-		if (child instanceof THREE.Mesh && child.userData.id !== 'floor') {
-			objectsToRemove.push(child);
-		}
-	});
+	topLevel.forEach((object) => {
+		if (object.userData.id === 'floor') return;
 
-	// Remove and dispose of each object
-	objectsToRemove.forEach((object: THREE.Object3D) => {
-		if (object instanceof THREE.Mesh) {
-			object.geometry?.dispose();
+		// Recursively dispose all meshes in this subtree
+		object.traverse((child) => {
+			if (!(child instanceof THREE.Mesh)) return;
 
-			const materials = Array.isArray(object.material) ? object.material : [object.material];
+			child.geometry?.dispose();
+
+			const materials = Array.isArray(child.material) ? child.material : [child.material];
 			materials.forEach((material) => {
-				// Dispose textures first
 				for (const key in material) {
 					const value = material[key as keyof THREE.Material];
-					if (value && value instanceof THREE.Texture) {
+					if (value instanceof THREE.Texture) {
 						value.dispose();
 					}
 				}
 				material.dispose();
 			});
-		}
+		});
 
 		object.removeFromParent();
 	});

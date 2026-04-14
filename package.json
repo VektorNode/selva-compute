@@ -69,6 +69,7 @@
 	"scripts": {
 		"build": " pnpm type-check && pnpm clean && tsup",
 		"dev": "tsup --watch",
+		"example": "vite --config vite.config.ts",
 		"clean": "node --input-type=module -e \"import fs from 'fs'; fs.rmSync('dist', { recursive: true, force: true })\"",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
@@ -115,6 +116,7 @@
 		"typedoc-plugin-missing-exports": "^4.1.2",
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.56.1",
+		"vite": "^8.0.8",
 		"vitest": "^3.2.4"
 	}
 }

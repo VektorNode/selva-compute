@@ -28,6 +28,15 @@
       border-right: 1px solid #333;
     }
 
+    #resize-handle {
+      width: 5px;
+      flex-shrink: 0;
+      background: #333;
+      cursor: col-resize;
+      transition: background 0.15s;
+    }
+    #resize-handle:hover, #resize-handle.dragging { background: #555; }
+
     #sidebar h2 {
       font-size: 13px;
       text-transform: uppercase;
@@ -137,6 +146,8 @@
   </div>
 </div>
 
+<div id="resize-handle"></div>
+
 <div id="canvas-container">
   <canvas id="viewer-canvas"></canvas>
   <div id="hud">
@@ -144,229 +155,9 @@
   </div>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
-  }
-}
-</script>
-
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-// ─── Smooth camera animation helper ──────────────────────────────────────────
-
-function animateCameraTo(camera, controls, toPosition, toTarget, durationMs = 600) {
-  const fromPosition = camera.position.clone();
-  const fromTarget = controls.target.clone();
-  const startTime = performance.now();
-  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
-
-  const tick = () => {
-    const t = easeOut(Math.min((performance.now() - startTime) / durationMs, 1));
-    camera.position.lerpVectors(fromPosition, toPosition, t);
-    controls.target.lerpVectors(fromTarget, toTarget, t);
-    controls.update();
-    if (t < 1) requestAnimationFrame(tick);
-  };
-
-  requestAnimationFrame(tick);
-}
-
-// ─── Minimal inline version of initThree (mirrors three-initializer.ts) ───────
-
-function initThree(canvas, options = {}) {
-  const parent = canvas.parentElement;
-  const getSize = () => parent
-    ? { width: parent.clientWidth, height: parent.clientHeight }
-    : { width: window.innerWidth, height: window.innerHeight };
-
-  const { width, height } = getSize();
-
-  // Scene
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xf0f0f0);
-  scene.up.set(0, 0, 1);
-
-  // Camera
-  const camera = new THREE.PerspectiveCamera(20, width / height, 0.01, 2000);
-  camera.position.set(-10, 10, 10);
-
-  // Renderer
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-  canvas.style.display = 'block';
-  renderer.setSize(width, height, true);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.VSMShadowMap;
-  renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-  // Lighting
-  const ambient = new THREE.AmbientLight(0x404040, 1);
-  scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xffffff, 1);
-  sun.position.set(25, 50, 25);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -100; sun.shadow.camera.right = 100;
-  sun.shadow.camera.top = 100; sun.shadow.camera.bottom = -100;
-  sun.shadow.bias = -0.0001;
-  scene.add(sun);
-
-  // Controls
-  const controls = new OrbitControls(camera, canvas);
-  controls.screenSpacePanning = false;
-  controls.maxPolarAngle = Math.PI;
-  controls.update();
-
-  // Floor (hidden by default)
-  const floorGeo = new THREE.PlaneGeometry(50, 50);
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.7, side: THREE.DoubleSide });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.userData.id = 'floor';
-  floor.name = 'floor';
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  floor.visible = false;
-  scene.add(floor);
-
-  // Selection state
-  const selectedObjects = new Set();
-  const originalMaterials = new Map();
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  const mouseDownPos = new THREE.Vector2();
-  let selectionColor = new THREE.Color('#ff0000');
-
-  const clearSelection = () => {
-    selectedObjects.forEach(obj => {
-      if (obj instanceof THREE.Mesh && originalMaterials.has(obj)) {
-        obj.material = originalMaterials.get(obj);
-        originalMaterials.delete(obj);
-      }
-    });
-    selectedObjects.clear();
-  };
-
-  const fitToView = () => {
-    const box = new THREE.Box3();
-    scene.traverse(obj => {
-      if (obj.visible && obj.userData.id !== 'floor' && obj instanceof THREE.Mesh)
-        box.expandByObject(obj);
-    });
-    if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = camera.fov * (Math.PI / 180);
-    const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.5;
-    const dir = camera.position.clone().sub(controls.target).normalize();
-    camera.position.copy(center.clone().add(dir.multiplyScalar(distance)));
-    controls.target.copy(center);
-    controls.update();
-  };
-
-  // Click
-  canvas.addEventListener('mousedown', e => mouseDownPos.set(e.clientX, e.clientY));
-  canvas.addEventListener('click', e => {
-    if (mouseDownPos.distanceTo(new THREE.Vector2(e.clientX, e.clientY)) > 5) return;
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(scene.children, true);
-    if (hits.length > 0) {
-      const obj = hits[0].object;
-      if (!selectedObjects.has(obj)) {
-        clearSelection();
-        selectedObjects.add(obj);
-        if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) {
-          originalMaterials.set(obj, obj.material);
-          const m = obj.material.clone();
-          m.emissive = selectionColor.clone();
-          obj.material = m;
-        }
-        options.onObjectSelected?.(obj);
-      }
-    } else {
-      clearSelection();
-      options.onBackgroundClicked?.();
-    }
-  });
-
-  // Double-click zoom (smooth)
-  canvas.addEventListener('dblclick', e => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(scene.children, true);
-    if (hits.length === 0) return;
-    const obj = hits[0].object;
-    options.onMeshDoubleClicked?.(obj);
-    const box = new THREE.Box3().setFromObject(obj);
-    if (box.isEmpty()) return;
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = camera.fov * (Math.PI / 180);
-    const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.5;
-    const dir = camera.position.clone().sub(controls.target).normalize();
-    const toPosition = center.clone().add(dir.multiplyScalar(distance));
-    animateCameraTo(camera, controls, toPosition, center);
-  });
-
-  // Keyboard
-  canvas.setAttribute('tabindex', '0');
-  canvas.addEventListener('keydown', e => {
-    if (e.key.toLowerCase() === 'f' || e.key === ' ') { e.preventDefault(); fitToView(); }
-    if (e.key === 'Escape') { e.preventDefault(); clearSelection(); options.onBackgroundClicked?.(); }
-  });
-
-  // Resize
-  let resizeTimeout;
-  const resizeObserver = new ResizeObserver(() => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      const { width, height } = getSize();
-      if (!width || !height) return;
-      const pr = Math.min(window.devicePixelRatio, 2);
-      renderer.setPixelRatio(pr);
-      renderer.setSize(width, height, true);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    }, 100);
-  });
-  resizeObserver.observe(parent || document.body);
-
-  // Animation loop
-  let animId;
-  const animate = () => {
-    animId = requestAnimationFrame(animate);
-    if (controls.autoRotate) controls.update();
-    renderer.render(scene, camera);
-  };
-  animate();
-
-  const dispose = () => {
-    cancelAnimationFrame(animId);
-    resizeObserver.disconnect();
-    controls.dispose();
-    renderer.dispose();
-  };
-
-  return {
-    scene, camera, controls, renderer, floor, sun,
-    fitToView, clearSelection, dispose,
-    setSelectionColor: (c) => { selectionColor = new THREE.Color(c); }
-  };
-}
+import { initThree } from '../src/features/visualization/threejs/three-initializer.ts';
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -375,22 +166,32 @@ const infoPanel = document.getElementById('info-panel');
 let floorVisible = false;
 let autoRotate = false;
 
+let selectionColorHex = '#ff0000';
+
 const viewer = initThree(canvas, {
-  onObjectSelected: (obj) => {
-    infoPanel.innerHTML = `
-      <b>${obj.name || 'Mesh'}</b><br>
-      Type: ${obj.type}<br>
-      Position: ${obj.position.toArray().map(v => v.toFixed(2)).join(', ')}<br>
-      ${Object.keys(obj.userData).length ? 'UserData: ' + JSON.stringify(obj.userData) : ''}
-    `;
-  },
-  onBackgroundClicked: () => {
-    infoPanel.textContent = 'Click a mesh to select it.\nDouble-click to zoom in.';
-  },
-  onMeshDoubleClicked: (obj) => {
-    infoPanel.innerHTML = `<b>Zoomed into:</b> ${obj.name || 'Mesh'}`;
+  floor: { enabled: true },
+  events: {
+    selectionColor: selectionColorHex,
+    onObjectSelected: (obj) => {
+      infoPanel.innerHTML = `
+        <b>${obj.name || 'Mesh'}</b><br>
+        Type: ${obj.type}<br>
+        Position: ${obj.position.toArray().map(v => v.toFixed(2)).join(', ')}<br>
+        ${Object.keys(obj.userData).length ? 'UserData: ' + JSON.stringify(obj.userData) : ''}
+      `;
+    },
+    onBackgroundClicked: () => {
+      infoPanel.textContent = 'Click a mesh to select it.\nDouble-click to zoom in.';
+    },
+    onMeshDoubleClicked: (obj) => {
+      infoPanel.innerHTML = `<b>Zoomed into:</b> ${obj.name || 'Mesh'}`;
+    }
   }
 });
+
+// Find the floor mesh that initThree added to the scene
+const floor = viewer.scene.getObjectByName('floor');
+if (floor) floor.visible = false;
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -484,18 +285,44 @@ window.toggleAutoRotate = () => {
 
 window.toggleFloor = () => {
   floorVisible = !floorVisible;
-  viewer.floor.visible = floorVisible;
+  if (floor) floor.visible = floorVisible;
   const btn = document.getElementById('btn-floor');
   btn.textContent = `Floor: ${floorVisible ? 'On' : 'Off'}`;
   btn.classList.toggle('active', floorVisible);
 };
 
 window.updateSelectionColor = (hex) => {
-  viewer.setSelectionColor(hex);
+  // Re-initialize with new color — simplest approach since selectionColor is baked in at init
+  selectionColorHex = hex;
 };
 
 // Start with a sample scene
 window.addRandomMeshes();
+
+// ─── Sidebar resize handle ────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+const handle = document.getElementById('resize-handle');
+
+handle.addEventListener('mousedown', e => {
+  e.preventDefault();
+  handle.classList.add('dragging');
+  const startX = e.clientX;
+  const startWidth = sidebar.offsetWidth;
+
+  const onMove = (e) => {
+    const newWidth = Math.max(160, Math.min(600, startWidth + e.clientX - startX));
+    sidebar.style.width = newWidth + 'px';
+  };
+
+  const onUp = () => {
+    handle.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+});
 </script>
 </body>
 </html>

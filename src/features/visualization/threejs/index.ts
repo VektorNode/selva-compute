@@ -7,7 +7,6 @@ export {
 	updateScene,
 	parseColor,
 	applyOffset,
-	computeCombinedBoundingBox,
-	updateShadowCameraBounds
+	computeCombinedBoundingBox
 } from './three-helpers.js';
 export * as Materials from './three-materials.js';

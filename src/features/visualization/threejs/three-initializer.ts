@@ -7,12 +7,20 @@ import { ThreeInitializerOptions } from '../types';
 
 const defaultUp = new THREE.Vector3(0, 0, 1);
 
+// Returns scale-specific values for mm, cm, and m scales
+const getScaleValue = (scale: string, mmVal: number, cmVal: number, mVal: number): number => {
+	switch (scale) {
+		case 'mm':
+			return mmVal;
+		case 'cm':
+			return cmVal;
+		default:
+			return mVal;
+	}
+};
+
 /**
- * Initializes a comprehensive Three.js environment with enhanced render quality and flexible configuration.
- *
- * @param canvas - The HTML canvas element to render the scene on.
- * @param options - Configuration options for the Three.js environment.
- * @returns An object containing the scene, camera, controls, renderer, and utility methods.
+ * Initializes a Three.js environment with scene, camera, renderer, and event handling.
  */
 export const initThree = function (
 	canvas: HTMLCanvasElement,
@@ -23,23 +31,19 @@ export const initThree = function (
 	controls: OrbitControls;
 	renderer: THREE.WebGLRenderer;
 	dispose: () => void;
-	resize: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
 } {
 	const config = applyDefaults(options || {});
 
-	// Initialize core components
 	const scene = createScene(config);
 	const camera = createCamera(config, canvas);
 	const renderer = setupRenderer(canvas, config);
 	const controls = setupControls(camera, canvas, config);
 
-	// Setup environment and lighting
 	setupEnvironment(scene, config);
 	setupLighting(scene, config);
 
-	// Add floor if enabled
 	if (config.floor?.enabled) {
 		addFloor(scene, config);
 	}
@@ -47,33 +51,35 @@ export const initThree = function (
 	const eventHandlers =
 		config.events.enableEventHandlers !== false
 			? setupEventHandlers(canvas, scene, camera, controls, config)
-			: { dispose: () => { }, fitToView: () => { }, clearSelection: () => { } };
+			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
 
-	// Handle resizing
-	const { resize, dispose: disposeResize } = setupResponsiveResize(canvas, renderer, camera);
+	const parent = canvas.parentElement;
+	const getCanvasSize = () =>
+		parent
+			? { width: parent.clientWidth, height: parent.clientHeight }
+			: { width: window.innerWidth, height: window.innerHeight };
 
-	// Animation loop
+	// Resize checked every frame so buffer resize and render happen in the same frame,
+	// preventing visible blank frames on resize
 	const { animate, dispose: disposeAnimation } = createAnimationLoop(
 		renderer,
 		scene,
 		camera,
-		controls
+		controls,
+		getCanvasSize,
+		config.events.onFrame
 	);
 	animate();
 
-	// Set scene up vector
 	const sceneUp = config.environment?.sceneUp || defaultUp;
 	scene.up.set(sceneUp.x, sceneUp.y, sceneUp.z);
 
-	// Comprehensive disposal
 	const dispose = () => {
-		disposeAnimation(); // Stop animation loop
-		disposeResize(); // Remove resize listeners
-		eventHandlers.dispose(); // Remove click/keyboard listeners
-		controls.dispose(); // Dispose controls
-		renderer.dispose(); // Dispose renderer
+		disposeAnimation();
+		eventHandlers.dispose();
+		controls.dispose();
+		renderer.dispose();
 
-		// Dispose geometries and materials
 		scene.traverse((object) => {
 			if (object instanceof THREE.Mesh) {
 				object.geometry?.dispose();
@@ -92,7 +98,6 @@ export const initThree = function (
 		controls,
 		renderer,
 		dispose,
-		resize,
 		fitToView: eventHandlers.fitToView,
 		clearSelection: eventHandlers.clearSelection
 	};
@@ -101,11 +106,9 @@ export const initThree = function (
 function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitializerOptions> {
 	const scale = options.sceneScale || 'm';
 
-	// Define sensible defaults for each scale
-	// Note: All Rhino geometry is normalized to METERS (1 unit = 1 meter), sceneScale just changes the viewing perspective
+	// All Rhino geometry is normalized to METERS (1 unit = 1 meter), sceneScale just changes the viewing perspective
 	const scaleDefaults = {
 		mm: {
-			// Geometry scaled UP by 1000x (mm to m conversion for better precision)
 			cameraDistance: 20,
 			near: 0.1,
 			far: 2000,
@@ -117,7 +120,6 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			scaleFactor: 1000
 		},
 		cm: {
-			// Geometry scaled UP by 100x (cm to m conversion)
 			cameraDistance: 20,
 			near: 0.1,
 			far: 2000,
@@ -129,7 +131,6 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			scaleFactor: 100
 		},
 		m: {
-			// Natural Three.js scale (1 unit = 1 meter)
 			cameraDistance: 10,
 			near: 0.01,
 			far: 2000,
@@ -141,7 +142,6 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			scaleFactor: 1
 		},
 		inches: {
-			// Geometry scaled UP by ~39.37x (inches to m conversion)
 			cameraDistance: 15,
 			near: 0.1,
 			far: 2000,
@@ -153,7 +153,6 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			scaleFactor: 39.37
 		},
 		feet: {
-			// Geometry scaled UP by ~3.28x (feet to m conversion)
 			cameraDistance: 8,
 			near: 0.1,
 			far: 2000,
@@ -236,18 +235,16 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			enableEventHandlers: options.events?.enableEventHandlers ?? true,
 			enableKeyboardControls: options.events?.enableKeyboardControls ?? true,
 			enableClickToFocus: options.events?.enableClickToFocus ?? true,
-			enableDoubleClickZoom: options.events?.enableDoubleClickZoom ?? true
+			enableDoubleClickZoom: options.events?.enableDoubleClickZoom ?? true,
+			onReady: options.events?.onReady,
+			onFrame: options.events?.onFrame
 		}
 	};
 }
 
-/**
- * Creates and configures the scene.
- */
 function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
 	const scene = new THREE.Scene();
 
-	// Set background color
 	const bgColor =
 		typeof config.environment.backgroundColor === 'string'
 			? new THREE.Color(config.environment.backgroundColor)
@@ -257,9 +254,6 @@ function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
 	return scene;
 }
 
-/**
- * Smoothly animates the camera to a new position and target using an ease-out curve.
- */
 function animateCameraTo(
 	camera: THREE.PerspectiveCamera,
 	controls: OrbitControls,
@@ -271,7 +265,6 @@ function animateCameraTo(
 	const fromTarget = controls.target.clone();
 	const startTime = performance.now();
 
-	// Ease-out cubic
 	const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
 
 	const tick = () => {
@@ -288,24 +281,49 @@ function animateCameraTo(
 	requestAnimationFrame(tick);
 }
 
-/**
- * Creates an optimized animation loop with proper disposal.
- */
+// Resize applied before render so buffer clear and draw happen in the same frame,
+// preventing visible blank frames when the canvas is resized
 function createAnimationLoop(
 	renderer: THREE.WebGLRenderer,
 	scene: THREE.Scene,
 	camera: THREE.PerspectiveCamera,
-	controls: OrbitControls
+	controls: OrbitControls,
+	getCanvasSize: () => { width: number; height: number },
+	onFrame?: (delta: number) => void
 ): { animate: () => void; dispose: () => void } {
 	let animationId: number | null = null;
+	let lastTime = performance.now();
+
+	const checkResize = () => {
+		const { width, height } = getCanvasSize();
+		if (width === 0 || height === 0) return;
+
+		const pixelRatio = Math.min(window.devicePixelRatio, 2);
+		const newW = Math.round(width * pixelRatio);
+		const newH = Math.round(height * pixelRatio);
+
+		if (renderer.domElement.width !== newW || renderer.domElement.height !== newH) {
+			renderer.setPixelRatio(pixelRatio);
+			renderer.setSize(width, height, false);
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+		}
+	};
 
 	const animate = function () {
 		animationId = requestAnimationFrame(animate);
 
-		// Update controls if damping or auto-rotate is enabled
+		const now = performance.now();
+		const delta = (now - lastTime) / 1000;
+		lastTime = now;
+
+		checkResize();
+
 		if (controls.enableDamping || controls.autoRotate) {
 			controls.update();
 		}
+
+		onFrame?.(delta);
 
 		renderer.render(scene, camera);
 	};
@@ -320,96 +338,6 @@ function createAnimationLoop(
 	return { animate, dispose };
 }
 
-/**
- * Sets up responsive resizing with double-rAF for accurate post-layout measurements.
- * Observes the parent container when present. When the canvas has no parent (fullscreen /
- * position:fixed), observes the canvas directly so mobile fullscreen transitions are caught
- * reliably. Observing both simultaneously is intentionally avoided: setSize() mutates the
- * canvas dimensions and would cause redundant observer callbacks on every resize.
- */
-function setupResponsiveResize(
-	canvas: HTMLCanvasElement,
-	renderer: THREE.WebGLRenderer,
-	camera: THREE.PerspectiveCamera
-): { resize: () => void; dispose: () => void } {
-	const parent = canvas.parentElement;
-	let rafId: number | null = null;
-	let resizeObserver: ResizeObserver | null = null;
-
-	const getSize = () =>
-		parent
-			? { width: parent.clientWidth, height: parent.clientHeight }
-			: { width: window.innerWidth, height: window.innerHeight };
-
-	const applyResize = () => {
-		const { width, height } = getSize();
-		if (width === 0 || height === 0) return;
-
-		const pixelRatio = Math.min(window.devicePixelRatio, 2);
-		const currentW = Math.round(renderer.domElement.clientWidth * pixelRatio);
-		const currentH = Math.round(renderer.domElement.clientHeight * pixelRatio);
-		const newW = Math.round(width * pixelRatio);
-		const newH = Math.round(height * pixelRatio);
-
-		if (currentW !== newW || currentH !== newH) {
-			renderer.setPixelRatio(pixelRatio);
-			renderer.setSize(width, height, true);
-			camera.aspect = width / height;
-			camera.updateProjectionMatrix();
-		}
-	};
-
-	const handleResize = () => {
-		// Cancel any pending rAF
-		if (rafId !== null) cancelAnimationFrame(rafId);
-
-		// Double rAF: first frame lets the browser finish layout,
-		// second frame guarantees clientWidth/Height are stable and accurate.
-		// This fixes mobile fullscreen transitions where setTimeout(fn, 16)
-		// fires before the new layout is fully committed.
-		rafId = requestAnimationFrame(() => {
-			rafId = requestAnimationFrame(() => {
-				rafId = null;
-				applyResize();
-			});
-		});
-	};
-
-	if (typeof ResizeObserver !== 'undefined') {
-		resizeObserver = new ResizeObserver(handleResize);
-		if (parent) {
-			// Normal case: observe parent container; setSize() changes canvas attrs but
-			// the parent is not affected, so no feedback loop.
-			resizeObserver.observe(parent);
-		} else {
-			// Fullscreen / position:fixed case: observe canvas directly.
-			// The guard in applyResize (domElement.width !== width) prevents
-			// infinite loops caused by setSize() mutating the canvas dimensions.
-			resizeObserver.observe(canvas);
-		}
-	} else {
-		// Fallback for older browsers
-		window.addEventListener('resize', handleResize);
-	}
-
-	const dispose = () => {
-		if (rafId !== null) {
-			cancelAnimationFrame(rafId);
-			rafId = null;
-		}
-		if (resizeObserver) {
-			resizeObserver.disconnect();
-		} else {
-			window.removeEventListener('resize', handleResize);
-		}
-	};
-
-	return { resize: handleResize, dispose };
-}
-
-/**
- * Sets up environment lighting and HDR.
- */
 function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
 	if (config.environment.enableEnvironmentLighting) {
 		new HDRLoader().load(
@@ -420,24 +348,26 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 				if (config.environment.showEnvironment) {
 					scene.background = envMap;
 				}
+				config.events.onReady?.();
 			},
 			undefined,
 			function (error) {
 				getLogger().warn('HDR texture could not be loaded, falling back to basic lighting:', error);
+				config.events.onReady?.();
 			}
 		);
+	} else {
+		config.events.onReady?.();
 	}
 }
 
 function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
-	// Add ambient light
 	const ambientLight = new THREE.AmbientLight(
 		config.lighting.ambientLightColor,
 		config.lighting.ambientLightIntensity
 	);
 	scene.add(ambientLight);
 
-	// Add directional light (sunlight)
 	if (config.lighting.enableSunlight) {
 		const sunlight = new THREE.DirectionalLight(
 			config.lighting.sunlightColor ?? 0xffffff,
@@ -450,17 +380,15 @@ function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOpti
 
 		if (config.render.enableShadows) {
 			sunlight.castShadow = true;
-			const shadowSize = config.sceneScale === 'mm' ? 0.1 : config.sceneScale === 'cm' ? 10 : 100;
+			const shadowSize = getScaleValue(config.sceneScale, 0.1, 10, 100);
 
 			sunlight.shadow.camera.left = -shadowSize;
 			sunlight.shadow.camera.right = shadowSize;
 			sunlight.shadow.camera.top = shadowSize;
 			sunlight.shadow.camera.bottom = -shadowSize;
 
-			const shadowNear =
-				config.sceneScale === 'mm' ? 0.001 : config.sceneScale === 'cm' ? 0.1 : 0.5;
-
-			const shadowFar = config.sceneScale === 'mm' ? 1 : config.sceneScale === 'cm' ? 100 : 500;
+			const shadowNear = getScaleValue(config.sceneScale, 0.001, 0.1, 0.5);
+			const shadowFar = getScaleValue(config.sceneScale, 1, 100, 500);
 
 			sunlight.shadow.camera.near = shadowNear;
 			sunlight.shadow.camera.far = shadowFar;
@@ -468,7 +396,6 @@ function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOpti
 			sunlight.shadow.mapSize.width = config.render.shadowMapSize || 2048;
 			sunlight.shadow.mapSize.height = config.render.shadowMapSize || 2048;
 
-			// Improved shadow quality
 			sunlight.shadow.bias = -0.0001;
 			sunlight.shadow.normalBias = 0.02;
 		}
@@ -477,9 +404,6 @@ function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOpti
 	}
 }
 
-/**
- * Adds a floor to the scene with scale-aware sizing.
- */
 function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
 	const floorSize = config.floor.size;
 	const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
@@ -509,9 +433,6 @@ function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>)
 	scene.add(floor);
 }
 
-/**
- * Creates and configures the camera with proper aspect ratio.
- */
 function createCamera(
 	config: Required<ThreeInitializerOptions>,
 	canvas: HTMLCanvasElement
@@ -535,9 +456,7 @@ function createCamera(
 	return camera;
 }
 
-/**
- * Sets up enhanced WebGL renderer with improved quality settings.
- */
+// Logarithmic depth buffer improves depth precision for mixed scales (mm to km)
 function setupRenderer(
 	canvas: HTMLCanvasElement,
 	config: Required<ThreeInitializerOptions>
@@ -548,45 +467,36 @@ function setupRenderer(
 		alpha: true,
 		powerPreference: 'high-performance',
 		preserveDrawingBuffer: config.render.preserveDrawingBuffer,
-		// Enable logarithmic depth buffer for extreme scale ranges
-		// This dramatically improves depth precision for mixed scales (mm to km)
 		logarithmicDepthBuffer: true
 	});
 
-	// Get proper dimensions - parent container or window
 	const parent = canvas.parentElement;
 	const width = parent ? parent.clientWidth : window.innerWidth;
 	const height = parent ? parent.clientHeight : window.innerHeight;
 
-	// Set canvas style to fill parent if it exists
 	if (parent) {
 		canvas.style.width = '100%';
 		canvas.style.height = '100%';
 		canvas.style.display = 'block';
 	}
 
-	renderer.setSize(width, height, true);
+	renderer.setSize(width, height, false);
 	renderer.setPixelRatio(config.render.pixelRatio || Math.min(window.devicePixelRatio, 2));
 
-	// Enhanced shadow settings
 	if (config.render.enableShadows) {
 		renderer.shadowMap.enabled = true;
-		// Use VSM for better quality with extreme scales
 		renderer.shadowMap.type = THREE.VSMShadowMap;
 	}
 
-	// Improved tone mapping and color management
-	renderer.toneMapping = config.render.toneMapping || THREE.ACESFilmicToneMapping;
+	renderer.toneMapping = config.render.toneMapping!;
 	renderer.toneMappingExposure = config.render.toneMappingExposure || 1.0;
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-	// Additional quality settings for depth rendering
-	renderer.sortObjects = true; // Ensure proper render order
+	renderer.sortObjects = true;
 
 	return renderer;
 }
 
-// Add event handler setup function
 function setupEventHandlers(
 	canvas: HTMLCanvasElement,
 	scene: THREE.Scene,
@@ -604,11 +514,9 @@ function setupEventHandlers(
 	const mouse = new THREE.Vector2();
 	const mouseDownPosition = new THREE.Vector2();
 
-	// Fit scene to view
 	const fitToView = () => {
 		const box = new THREE.Box3();
 
-		// Calculate bounding box of all visible objects (excluding floor)
 		scene.traverse((object) => {
 			if (object.visible && object.userData.id !== 'floor' && object instanceof THREE.Mesh) {
 				box.expandByObject(object);
@@ -623,24 +531,19 @@ function setupEventHandlers(
 		const center = box.getCenter(new THREE.Vector3());
 		const size = box.getSize(new THREE.Vector3());
 
-		// Calculate distance needed to fit the object
 		const maxDim = Math.max(size.x, size.y, size.z);
 		const fov = camera.fov * (Math.PI / 180);
 		let distance = maxDim / (2 * Math.tan(fov / 2));
 
-		// Add some padding
 		distance *= 1.5;
 
-		// Position camera
 		const direction = camera.position.clone().sub(controls.target).normalize();
 		camera.position.copy(center.clone().add(direction.multiplyScalar(distance)));
 
-		// Update controls target
 		controls.target.copy(center);
 		controls.update();
 	};
 
-	// Parse selection color
 	const selectionColorObj =
 		typeof config.events.selectionColor === 'string'
 			? new THREE.Color(config.events.selectionColor)
@@ -648,10 +551,8 @@ function setupEventHandlers(
 				? config.events.selectionColor
 				: new THREE.Color('#ff0000');
 
-	// Clear selection
 	const clearSelection = () => {
 		selectedObjects.forEach((obj) => {
-			// Restore original material
 			if (obj instanceof THREE.Mesh && originalMaterials.has(obj)) {
 				obj.material = originalMaterials.get(obj)!;
 				originalMaterials.delete(obj);
@@ -664,40 +565,34 @@ function setupEventHandlers(
 		mouseDownPosition.set(event.clientX, event.clientY);
 	};
 
-	// Handle canvas clicks
 	const handleCanvasClick = (event: MouseEvent) => {
-		// Ignore if mouse has moved significantly (drag)
+		// Ignore if mouse has moved (drag)
 		const currentMousePosition = new THREE.Vector2(event.clientX, event.clientY);
 		if (mouseDownPosition.distanceTo(currentMousePosition) > 5) {
 			return;
 		}
 
-		// Calculate mouse position in normalized device coordinates
 		const rect = canvas.getBoundingClientRect();
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-		// Raycast to find intersected objects
 		raycaster.setFromCamera(mouse, camera);
 		const intersects = raycaster.intersectObjects(scene.children, true);
 
 		if (intersects.length > 0) {
 			const clickedObject = intersects[0].object;
 
-			// Handle object selection
 			if (!selectedObjects.has(clickedObject)) {
 				clearSelection();
 				selectedObjects.add(clickedObject);
 
-				// Clone material and apply selection color only to this mesh
+				// Clone material so we don't affect other meshes
 				if (
 					clickedObject instanceof THREE.Mesh &&
 					clickedObject.material instanceof THREE.Material
 				) {
-					// Store original material
 					originalMaterials.set(clickedObject, clickedObject.material);
 
-					// Clone the material so we don't affect other meshes
 					const clonedMaterial = clickedObject.material.clone();
 					(clonedMaterial as any).emissive = selectionColorObj.clone();
 					clickedObject.material = clonedMaterial;
@@ -705,19 +600,16 @@ function setupEventHandlers(
 
 				config.events?.onObjectSelected?.(clickedObject);
 
-				// Call metadata callback if the mesh has metadata
 				if (clickedObject instanceof THREE.Mesh && Object.keys(clickedObject.userData).length > 0) {
 					config.events?.onMeshMetadataClicked?.(clickedObject.userData);
 				}
 			}
 		} else {
-			// Background clicked
 			clearSelection();
 			config.events?.onBackgroundClicked?.({ x: mouse.x, y: mouse.y });
 		}
 	};
 
-	// Handle double-click to zoom into mesh
 	const handleDoubleClick = (event: MouseEvent) => {
 		const rect = canvas.getBoundingClientRect();
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -748,7 +640,6 @@ function setupEventHandlers(
 		animateCameraTo(camera, controls, targetPosition, center);
 	};
 
-	// Handle keyboard events
 	const handleKeydown = (event: KeyboardEvent) => {
 		if (!config.events?.enableKeyboardControls) return;
 
@@ -768,7 +659,6 @@ function setupEventHandlers(
 		}
 	};
 
-	// Add event listeners
 	if (config.events?.enableClickToFocus) {
 		canvas.addEventListener('mousedown', handleMouseDown);
 		canvas.addEventListener('click', handleCanvasClick);
@@ -776,13 +666,10 @@ function setupEventHandlers(
 	}
 
 	if (config.events?.enableKeyboardControls) {
-		// Make canvas focusable
 		canvas.setAttribute('tabindex', '0');
-		// Only listen for keydown when canvas has focus
 		canvas.addEventListener('keydown', handleKeydown);
 	}
 
-	// Disposal function
 	const dispose = () => {
 		canvas.removeEventListener('mousedown', handleMouseDown);
 		canvas.removeEventListener('click', handleCanvasClick);
@@ -794,9 +681,6 @@ function setupEventHandlers(
 	return { dispose, fitToView, clearSelection };
 }
 
-/**
- * Sets up enhanced orbit controls with scale-aware distances.
- */
 function setupControls(
 	camera: THREE.PerspectiveCamera,
 	canvas: HTMLCanvasElement,
@@ -804,27 +688,22 @@ function setupControls(
 ): OrbitControls {
 	const controls = new OrbitControls(camera, canvas);
 
-	// Set target
 	const target = config.camera.target;
 	if (target) {
 		controls.target.set(target.x, target.y, target.z);
 	}
 
-	// Configure damping
 	controls.enableDamping = config.controls.enableDamping || false;
 	controls.dampingFactor = config.controls.dampingFactor || 0.05;
 
-	// Configure auto rotation
 	controls.autoRotate = config.controls.autoRotate || false;
 	controls.autoRotateSpeed = config.controls.autoRotateSpeed || 0.5;
 
-	// Configure interaction limits
 	controls.enableZoom = config.controls.enableZoom ?? true;
 	controls.enablePan = config.controls.enablePan ?? true;
 	controls.minDistance = config.controls.minDistance || 0.001;
 	controls.maxDistance = config.controls.maxDistance || Infinity;
 
-	// Smooth controls
 	controls.screenSpacePanning = false;
 	controls.maxPolarAngle = Math.PI;
 

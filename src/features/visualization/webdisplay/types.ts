@@ -14,13 +14,18 @@ export interface SerializableMaterial {
  */
 export interface MeshMetadata {
 	name: string;
+	/** Layer path for grouping in the scene manager (e.g. 'Structure/Walls') */
+	layer: string;
+	/** Original index in the GH input tree before material grouping. Combined with
+	 *  MeshBatch.sourceComponentId to uniquely identify the GH source geometry. */
+	originalIndex: number;
 	vertexCount: number;
 	faceCount: number;
 	/** Offset in the combined vertex array (in number of floats) */
 	vertexOffset: number;
 	/** Offset in the combined face index array (in number of integers) */
 	faceOffset: number;
-	/** Metadata for the mesh */
+	/** Arbitrary key-value pairs from the GH Metadata input */
 	metadata?: Record<string, string>;
 }
 
@@ -44,6 +49,9 @@ export interface MeshBatch {
 	groups: MaterialGroup[];
 	/** Compressed binary data containing all vertices and faces */
 	compressedData: string;
+	/** InstanceGuid of the WebDisplay GH component that produced this batch.
+	 *  Combined with MeshMetadata.originalIndex to backtrack any mesh to its GH source. */
+	sourceComponentId?: string;
 }
 
 /**
