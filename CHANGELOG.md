@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 1.5.1
+
+### Patch Changes
+
+- 192d412: Merge with new project stucture
+
 ## 1.5.0
 
 ### Minor Changes
