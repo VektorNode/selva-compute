@@ -200,7 +200,7 @@ export function extractFileData(response: GrasshopperComputeResponse): FileData[
 				parsed &&
 				parsed.fileName &&
 				parsed.fileType &&
-				parsed.data &&
+				'data' in parsed &&
 				typeof parsed.isBase64Encoded === 'boolean' &&
 				typeof parsed.subFolder === 'string'
 			) {

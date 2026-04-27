@@ -1,5 +1,5 @@
 /**
- * Visualization utilities for selva-compute
+ * Visualization utilities for @selvajs/compute
  *
  * Provides Three.js integration and web display mesh parsing.
  *

@@ -21,6 +21,7 @@ import type {
  * Creates a safe default InputType when processing fails
  */
 function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType): InputParam {
+	const isList = (rawInput.atMost ?? 1) > 1;
 	switch (rawInput.paramType) {
 		case 'Number':
 		case 'Integer':
@@ -31,44 +32,44 @@ function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType)
 				maximum: rawInput.maximum,
 				atLeast: rawInput.atLeast,
 				atMost: rawInput.atMost,
-				default: rawInput.atMost > 1 ? [0] : 0
+				default: isList ? [0] : 0
 			} as NumericInputType;
 		case 'Boolean':
 			return {
 				...baseInput,
 				paramType: 'Boolean',
-				default: rawInput.atMost > 1 ? [false] : false
+				default: isList ? [false] : false
 			} as BooleanInputType;
 		case 'Text':
 			return {
 				...baseInput,
 				paramType: 'Text',
-				default: rawInput.atMost > 1 ? [''] : ''
+				default: isList ? [''] : ''
 			} as TextInputType;
 		case 'ValueList':
 			return {
 				...baseInput,
 				paramType: 'ValueList',
 				values: rawInput.values ?? {},
-				default: rawInput.atMost > 1 ? [rawInput.default] : rawInput.default
+				default: isList ? [rawInput.default] : rawInput.default
 			} as ValueListInputType;
 		case 'File':
 			return {
 				...baseInput,
 				paramType: 'File',
-				default: rawInput.atMost > 1 ? [null] : null
+				default: isList ? [null] : null
 			} as FileInputType;
 		case 'Color':
 			return {
 				...baseInput,
 				paramType: 'Color',
-				default: rawInput.atMost > 1 ? ['0, 0, 0'] : '0, 0, 0'
+				default: isList ? ['0, 0, 0'] : '0, 0, 0'
 			} as ColorInputType;
 		default:
 			return {
 				...baseInput,
 				paramType: 'Geometry',
-				default: rawInput.atMost > 1 ? [null] : null
+				default: isList ? [null] : null
 			} as GeometryInputType;
 	}
 }

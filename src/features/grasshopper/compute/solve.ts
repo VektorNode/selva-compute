@@ -80,7 +80,7 @@ export function prepareGrasshopperArgs(
 	if (definition instanceof Uint8Array) {
 		// Binary data → convert to base64
 		args.algo = base64ByteArray(definition);
-	} else if (definition.startsWith('http')) {
+	} else if (/^https?:\/\//i.test(definition)) {
 		// URL → use as pointer reference
 		args.pointer = definition;
 	} else if (isBase64(definition)) {
@@ -101,9 +101,9 @@ export function applyOptionalComputeSettings(
 	arglist: GrasshopperRequestSchema,
 	options: GrasshopperComputeConfig
 ): void {
-	if (options.cachesolve !== null) arglist.cachesolve = options.cachesolve;
-	if (options.modelunits !== null) arglist.modelunits = options.modelunits;
-	if (options.angletolerance !== null) arglist.angletolerance = options.angletolerance;
-	if (options.absolutetolerance !== null) arglist.absolutetolerance = options.absolutetolerance;
-	if (options.dataversion !== null) arglist.dataversion = options.dataversion;
+	if (options.cachesolve != null) arglist.cachesolve = options.cachesolve;
+	if (options.modelunits != null) arglist.modelunits = options.modelunits;
+	if (options.angletolerance != null) arglist.angletolerance = options.angletolerance;
+	if (options.absolutetolerance != null) arglist.absolutetolerance = options.absolutetolerance;
+	if (options.dataversion != null) arglist.dataversion = options.dataversion;
 }

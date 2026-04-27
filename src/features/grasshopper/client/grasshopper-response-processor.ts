@@ -1,6 +1,7 @@
 import { downloadFileData } from '@/features/grasshopper/file-handling';
 import { FileBaseInfo, FileData } from '@/features/grasshopper/file-handling/types';
 import type { MeshExtractionOptions } from '@/features/visualization/webdisplay/types';
+import { RhinoComputeError, ErrorCodes } from '@/core/errors';
 
 import { GrasshopperComputeResponse } from '../types';
 
@@ -130,14 +131,13 @@ export default class GrasshopperResponseProcessor {
 			...options
 		};
 
-		// Dynamically import visualization module to avoid coupling three.js at module load time
+		// Dynamically import visualization module to avoid coupling three.js at module load time.
+		// Narrow the try/catch to the import only — errors from mesh extraction itself should
+		// propagate so callers can debug them, not get re-wrapped as "failed to load".
+		let getThreeMeshesFromComputeResponse: typeof import('@/features/visualization').getThreeMeshesFromComputeResponse;
 		try {
-			const { getThreeMeshesFromComputeResponse } = await import('@/features/visualization');
-			return getThreeMeshesFromComputeResponse(this.response, mergedOptions);
+			({ getThreeMeshesFromComputeResponse } = await import('@/features/visualization'));
 		} catch (error) {
-			// Import here to avoid circular dependencies at top level
-			// eslint-disable-next-line @typescript-eslint/no-require-imports
-			const { RhinoComputeError, ErrorCodes } = require('@/core/errors');
 			throw new RhinoComputeError(
 				'Failed to load three.js visualization module. Ensure three.js is installed as a peer dependency.',
 				ErrorCodes.INVALID_STATE,
@@ -146,6 +146,8 @@ export default class GrasshopperResponseProcessor {
 				}
 			);
 		}
+
+		return getThreeMeshesFromComputeResponse(this.response, mergedOptions);
 	}
 
 	/**
