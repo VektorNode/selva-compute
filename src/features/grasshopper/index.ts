@@ -9,6 +9,20 @@
 // CLIENT API (Recommended)
 // ============================================================================
 export { GrasshopperClient, GrasshopperResponseProcessor } from './client';
+export type { SolveOptions } from './client';
+
+// ============================================================================
+// SCHEDULER
+// ============================================================================
+export { SolveScheduler, hashSolveInput } from './scheduler';
+export type {
+	SchedulerMode,
+	CacheOptions,
+	SolveSchedulerOptions,
+	SolveContext,
+	SolveResult,
+	SolveExecutor
+} from './scheduler';
 
 // ============================================================================
 // COMPUTATION

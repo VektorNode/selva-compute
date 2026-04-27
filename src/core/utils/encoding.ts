@@ -1,7 +1,11 @@
+import { RhinoComputeError } from '../errors/base';
+import { ErrorCodes } from '../errors/error-codes';
+import { getLogger } from './logger';
+
 /**
  * Encodes a string to base64 (Node 20+ safe)
  *
- * @internal Internal encoding helper — kept internal to `selva-compute`.
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
  * @param str - String to encode
  * @returns Base64 encoded string
@@ -13,7 +17,7 @@ export function encodeStringToBase64(str: string): string {
 /**
  * Decodes a base64 string to a UTF-8 string (Node 20+ safe)
  *
- * @internal Internal encoding helper — kept internal to `selva-compute`.
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
  * @param base64Str - Base64 encoded string
  * @returns Decoded UTF-8 string
@@ -25,41 +29,43 @@ export function decodeBase64ToString(base64Str: string): string {
 /**
  * Checks if a string is valid base64
  *
- * @internal Internal encoding helper — kept internal to `selva-compute`.
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
  * @param str - String to check
  * @returns True if the string is valid base64
  */
 export function isBase64(str: string): boolean {
-	if (!str || str.trim().length === 0) return false;
-	try {
-		return Buffer.from(str, 'base64').toString('base64') === str;
-	} catch {
-		return false;
-	}
+	if (!str || str.length < 2) return false;
+	// Length must be a multiple of 4, only alphabet chars + at most 2 trailing '='
+	if (str.length % 4 !== 0) return false;
+	return /^[A-Za-z0-9+/]+={0,2}$/.test(str);
 }
 
 /**
  * Decodes a base64 string to binary data (Uint8Array)
  *
- * @internal Internal encoding helper — kept internal to `selva-compute`.
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
  * @param base64File - Base64 encoded string
  * @returns Decoded binary data as Uint8Array
  * @throws {RhinoComputeError} If base64 decoding is not supported in this environment.
  */
 export function decodeBase64ToBinary(base64File: string): Uint8Array {
-	if (typeof globalThis.atob === 'function') {
-		return Uint8Array.from(globalThis.atob(base64File), (c) => c.charCodeAt(0));
-	}
+	// Prefer Buffer in Node — it's faster and avoids the latin-1 string detour
+	// that atob + charCodeAt requires.
 	if (typeof (globalThis as any).Buffer === 'function') {
-		// Buffer.from returns a Uint8Array-compatible Buffer
-		return (globalThis as any).Buffer.from(base64File, 'base64');
+		const buf = (globalThis as any).Buffer.from(base64File, 'base64');
+		return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+	}
+	if (typeof globalThis.atob === 'function') {
+		const binary = globalThis.atob(base64File);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i) & 0xff;
+		}
+		return bytes;
 	}
 
-	// Import here to avoid circular dependencies at top level
-	// eslint-disable-next-line @typescript-eslint/no-require-imports
-	const { RhinoComputeError, ErrorCodes } = require('./../../core/errors');
 	throw new RhinoComputeError(
 		'Base64 decoding not supported in this environment.',
 		ErrorCodes.INVALID_STATE,
@@ -70,7 +76,7 @@ export function decodeBase64ToBinary(base64File: string): Uint8Array {
 /**
  * Encodes binary data (Uint8Array) to base64 string
  *
- * @internal Internal encoding helper — kept internal to `selva-compute`.
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
  * Source: https://github.com/mcneel/compute.rhino3d.appserver/blob/92c95a3b1d076a4d4a5360214ffd27c46425ff03/src/examples/convert/scriptjs
  * https://gist.github.com/jonleighton/958841
@@ -83,9 +89,6 @@ export function decodeBase64ToBinary(base64File: string): Uint8Array {
  */
 export function base64ByteArray(bytes: Uint8Array | null | undefined): string {
 	if (bytes === null || bytes === undefined) {
-		// Import here to avoid circular dependencies at top level
-		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		const { RhinoComputeError, ErrorCodes } = require('./../../core/errors');
 		throw new RhinoComputeError(
 			'Input bytes must not be null or undefined',
 			ErrorCodes.INVALID_INPUT,
@@ -235,10 +238,6 @@ export function base64ToRhinoObject(
 		data: string;
 	}
 ) {
-	// Import here to avoid circular dependencies at top level
-	// eslint-disable-next-line @typescript-eslint/no-require-imports
-	const { getLogger } = require('./logger');
-
 	//Make a type definition for this?
 	let decodata: null | object = null;
 	try {

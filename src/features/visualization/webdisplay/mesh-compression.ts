@@ -13,7 +13,7 @@ interface MeshData {
 /**
  * Decompresses a base64-encoded string using GZip.
  *
- * @internal Low-level decompression helper — keep internal to `selva-compute`.
+ * @internal Low-level decompression helper — keep internal to `@selvajs/compute`.
  * @param base64String - The base64-encoded string to decompress.
  * @returns The decompressed MeshData.
  * @throws {RhinoComputeError} If decompression fails or data is invalid.
@@ -40,7 +40,7 @@ export function decompressMeshData(base64String: string): MeshData {
 /**
  * Decompresses batched mesh data asynchronously using requestIdleCallback for non-blocking decompression.
  *
- * @internal Low-level decompression helper — keep internal to `selva-compute`.
+ * @internal Low-level decompression helper — keep internal to `@selvajs/compute`.
  * @param base64String - The base64-encoded compressed data.
  * @returns Promise resolving to decompressed vertices and faces arrays.
  * @throws {RhinoComputeError} If decompression fails or data is invalid.
@@ -145,10 +145,13 @@ function parseBatchedMeshBinaryData(binaryMeshData: Uint8Array): DecompressedMes
 		);
 	}
 
+	// slice() detaches the views from the gunzip buffer so downstream in-place
+	// mutations (coordinate transform) don't write back into shared memory.
 	const vertices = new Float32Array(
-		binaryMeshData.buffer,
-		binaryMeshData.byteOffset + offset,
-		numVertexFloats
+		binaryMeshData.buffer.slice(
+			binaryMeshData.byteOffset + offset,
+			binaryMeshData.byteOffset + offset + verticesByteLength
+		)
 	);
 	offset += verticesByteLength;
 
@@ -178,9 +181,10 @@ function parseBatchedMeshBinaryData(binaryMeshData: Uint8Array): DecompressedMes
 	}
 
 	const faces = new Uint32Array(
-		binaryMeshData.buffer,
-		binaryMeshData.byteOffset + offset,
-		numIndices
+		binaryMeshData.buffer.slice(
+			binaryMeshData.byteOffset + offset,
+			binaryMeshData.byteOffset + offset + indicesByteLength
+		)
 	);
 
 	return {
@@ -236,10 +240,13 @@ function parseMeshBinaryData(binaryMeshData: Uint8Array): MeshData {
 		);
 	}
 
+	// slice() detaches views from the gunzip buffer so downstream consumers
+	// cannot accidentally mutate shared memory.
 	const vertices = new Float32Array(
-		binaryMeshData.buffer,
-		binaryMeshData.byteOffset + offset,
-		numVertexFloats
+		binaryMeshData.buffer.slice(
+			binaryMeshData.byteOffset + offset,
+			binaryMeshData.byteOffset + offset + verticesByteLength
+		)
 	);
 	offset += verticesByteLength;
 
@@ -269,9 +276,10 @@ function parseMeshBinaryData(binaryMeshData: Uint8Array): MeshData {
 	}
 
 	const faceIndices = new Uint32Array(
-		binaryMeshData.buffer,
-		binaryMeshData.byteOffset + offset,
-		numIndices
+		binaryMeshData.buffer.slice(
+			binaryMeshData.byteOffset + offset,
+			binaryMeshData.byteOffset + offset + indicesByteLength
+		)
 	);
 
 	return {

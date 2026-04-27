@@ -1,4 +1,4 @@
-# Contributing to selva-compute
+# Contributing to @selvajs/compute
 
 ## Commits & Changesets
 
@@ -7,7 +7,7 @@
 
   ```markdown
   ---
-  'selva-compute': patch
+  '@selvajs/compute': patch
   ---
 
   Brief description of changes

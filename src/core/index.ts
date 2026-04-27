@@ -1,5 +1,5 @@
 /**
- * Core utilities and configuration for selva-compute
+ * Core utilities and configuration for @selvajs/compute
  *
  * This module provides the foundational building blocks for the library, including:
  * - **Networking**: Type-safe HTTP wrappers for the Rhino Compute API
@@ -9,7 +9,7 @@
  *
  * @example Performing a low-level compute request
  * ```typescript
- * import { fetchRhinoCompute, RhinoComputeError } from 'selva-compute/core';
+ * import { fetchRhinoCompute, RhinoComputeError } from '@selvajs/compute/core';
  *
  * try {
  *   const data = await fetchRhinoCompute('rhino/health', null, config);
@@ -23,7 +23,7 @@
  *
  * @example Monitoring server status
  * ```typescript
- * import { ComputeServerStats } from 'selva-compute/core';
+ * import { ComputeServerStats } from '@selvajs/compute/core';
  *
  * const stats = new ComputeServerStats(serverUrl, apiKey);
  * if (await stats.isServerOnline()) {
@@ -65,7 +65,7 @@ export type { Logger } from './utils/logger';
 export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
 // Configuration
-export type { ComputeConfig, RhinoModelUnit } from './types';
+export type { ComputeConfig, RhinoModelUnit, RetryPolicy } from './types';
 
 // String utilities
 export { toCamelCase, camelcaseKeys } from './utils/camel-case';

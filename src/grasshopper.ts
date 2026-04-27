@@ -6,7 +6,7 @@
  *
  * @example High-level usage
  * ```typescript
- * import { GrasshopperClient } from 'selva-compute/grasshopper';
+ * import { GrasshopperClient } from '@selvajs/compute/grasshopper';
  *
  * const client = new GrasshopperClient({ serverUrl: 'http://localhost:8081' });
  * const result = await client.solve(definitionUrl, dataTree);
@@ -14,7 +14,7 @@
  *
  * @example Low-level usage
  * ```typescript
- * import { solveGrasshopperDefinition, normalizeComputeConfig } from 'selva-compute/grasshopper';
+ * import { solveGrasshopperDefinition, normalizeComputeConfig } from '@selvajs/compute/grasshopper';
  *
  * const config = normalizeComputeConfig({ serverUrl: 'http://localhost:8081' });
  * const result = await solveGrasshopperDefinition(dataTree, definition, config);
@@ -28,6 +28,20 @@
 // ============================================================================
 
 export { GrasshopperResponseProcessor, GrasshopperClient } from './features/grasshopper';
+
+// ============================================================================
+// SCHEDULER (Robust scheduling for solves — sliders, queues, caching)
+// ============================================================================
+export { SolveScheduler, hashSolveInput } from './features/grasshopper';
+
+export type {
+	SchedulerMode,
+	CacheOptions,
+	SolveSchedulerOptions,
+	SolveContext,
+	SolveResult,
+	SolveExecutor
+} from './features/grasshopper';
 
 // ============================================================================
 // COMPUTE FUNCTIONS (Low-level API)
@@ -102,4 +116,6 @@ export type { GetValuesOptions, GetValuesResult, ParsedContext } from './feature
 
 export { RhinoComputeError } from './core';
 
-export type { ComputeConfig, RhinoModelUnit } from './core';
+export type { ComputeConfig, RhinoModelUnit, RetryPolicy } from './core';
+
+export type { SolveOptions } from './features/grasshopper/client/grasshopper-client';

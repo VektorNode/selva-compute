@@ -514,6 +514,18 @@ function setupEventHandlers(
 	const mouse = new THREE.Vector2();
 	const mouseDownPosition = new THREE.Vector2();
 
+	// An object is hittable only if every ancestor is also visible. Three.js's
+	// recursive intersect doesn't enforce that — it can hit a visible Mesh inside
+	// a hidden Group.
+	const isFullyVisible = (object: THREE.Object3D): boolean => {
+		let current: THREE.Object3D | null = object;
+		while (current) {
+			if (!current.visible) return false;
+			current = current.parent;
+		}
+		return true;
+	};
+
 	const fitToView = () => {
 		const box = new THREE.Box3();
 

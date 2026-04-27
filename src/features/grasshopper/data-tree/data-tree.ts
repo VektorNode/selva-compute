@@ -472,11 +472,13 @@ export class TreeBuilder {
 	 * @returns Array of path indices
 	 */
 	public static parsePathString(pathStr: string): number[] {
-		const match = pathStr.match(/^\{([\d;]+)\}$/);
+		// Allow the legitimate root path "{}" alongside "{0;1;2}"
+		const match = pathStr.match(/^\{([\d;]*)\}$/);
 		if (!match) {
 			getLogger().warn(`Invalid TreeBuilder path format: ${pathStr}, using [0]`);
 			return [0];
 		}
+		if (match[1] === '') return [];
 		return match[1].split(';').map(Number);
 	}
 

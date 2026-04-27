@@ -185,8 +185,9 @@ function clearScene(scene: THREE.Scene): void {
 
 			const materials = Array.isArray(child.material) ? child.material : [child.material];
 			materials.forEach((material) => {
-				for (const key in material) {
-					const value = material[key as keyof THREE.Material];
+				// Walk only own enumerable properties — `for...in` on a Three.js material
+				// also iterates the prototype chain, which is needlessly expensive.
+				for (const value of Object.values(material)) {
 					if (value instanceof THREE.Texture) {
 						value.dispose();
 					}

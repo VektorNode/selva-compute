@@ -242,12 +242,20 @@ export default class ComputeServerStats {
 
 			if (!active || this.disposed) return;
 
-			const _stats = await this.getServerStats();
+			try {
+				const _stats = await this.getServerStats();
 
-			// Check again after async operation to prevent race condition
-			if (!active || this.disposed) return;
+				// Check again after async operation to prevent race condition
+				if (!active || this.disposed) return;
 
-			callback(_stats);
+				try {
+					callback(_stats);
+				} catch (err) {
+					getLogger().error('[ComputeServerStats] Monitor callback threw:', err);
+				}
+			} catch (err) {
+				getLogger().error('[ComputeServerStats] Failed to fetch stats during monitor:', err);
+			}
 
 			if (active && !this.disposed) {
 				currentTimeoutId = setTimeout(() => void check(), intervalMs);

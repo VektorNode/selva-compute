@@ -33,6 +33,14 @@ export async function fetchDefinitionIO(
 	if (args.algo) payload.algo = args.algo;
 	if (args.pointer) payload.pointer = args.pointer;
 
+	if (!payload.algo && !payload.pointer) {
+		throw new RhinoComputeError(
+			'Definition must resolve to either a URL pointer or base64 algo',
+			ErrorCodes.INVALID_INPUT,
+			{ context: { definition } }
+		);
+	}
+
 	const response = await fetchRhinoCompute<'io'>('io', payload, config);
 
 	if (!response || typeof response !== 'object') {

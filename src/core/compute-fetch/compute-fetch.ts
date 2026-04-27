@@ -1,7 +1,7 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
 
-import type { ComputeConfig } from '../types';
+import type { ComputeConfig, RetryPolicy } from '../types';
 import type {
 	GrasshopperComputeConfig,
 	GrasshopperComputeResponse,
@@ -23,6 +23,69 @@ export type ComputeResponseFor<E extends string> = E extends keyof EndpointRespo
 	: unknown;
 
 // ============================================================================
+// Retry Policy
+// ============================================================================
+
+const DEFAULT_RETRY: Required<RetryPolicy> = {
+	attempts: 0,
+	baseDelayMs: 500,
+	maxDelayMs: 30_000,
+	retryOn429: true
+};
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+function resolveRetryPolicy(policy: RetryPolicy | undefined): Required<RetryPolicy> {
+	if (!policy) return DEFAULT_RETRY;
+	return {
+		attempts: policy.attempts ?? DEFAULT_RETRY.attempts,
+		baseDelayMs: policy.baseDelayMs ?? DEFAULT_RETRY.baseDelayMs,
+		maxDelayMs: policy.maxDelayMs ?? DEFAULT_RETRY.maxDelayMs,
+		retryOn429: policy.retryOn429 ?? DEFAULT_RETRY.retryOn429
+	};
+}
+
+/**
+ * Parse a Retry-After header value (seconds-int or HTTP-date) into ms.
+ * Returns null if the header is missing or unparseable.
+ */
+function parseRetryAfter(headerValue: string | null): number | null {
+	if (!headerValue) return null;
+	const seconds = Number(headerValue);
+	if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+	const dateMs = Date.parse(headerValue);
+	if (Number.isFinite(dateMs)) {
+		const delta = dateMs - Date.now();
+		return delta > 0 ? delta : 0;
+	}
+	return null;
+}
+
+function backoffDelay(attempt: number, policy: Required<RetryPolicy>): number {
+	const exponential = policy.baseDelayMs * Math.pow(2, attempt);
+	const jitter = Math.random() * policy.baseDelayMs;
+	return Math.min(exponential + jitter, policy.maxDelayMs);
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new DOMException('Aborted', 'AbortError'));
+			return;
+		}
+		const id = setTimeout(() => {
+			signal?.removeEventListener('abort', onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(id);
+			reject(new DOMException('Aborted', 'AbortError'));
+		};
+		signal?.addEventListener('abort', onAbort, { once: true });
+	});
+}
+
+// ============================================================================
 // Error Handling
 // ============================================================================
 
@@ -37,9 +100,16 @@ function throwHttpError(
 	const { status, statusText } = response;
 	const context = { url: fullUrl, requestId, method: 'POST', requestSize, serverUrl };
 
+	const bodyHint = errorBody ? ` — ${errorBody.slice(0, 200)}` : '';
 	const errorMap: Record<number, { message: string; code: string }> = {
-		401: { message: `HTTP ${status}: ${statusText}`, code: ErrorCodes.AUTH_ERROR },
-		403: { message: `HTTP ${status}: ${statusText}`, code: ErrorCodes.AUTH_ERROR },
+		401: {
+			message: `HTTP ${status}: ${statusText}${bodyHint}`,
+			code: ErrorCodes.AUTH_ERROR
+		},
+		403: {
+			message: `HTTP ${status}: ${statusText}${bodyHint}`,
+			code: ErrorCodes.AUTH_ERROR
+		},
 		404: { message: `Endpoint not found: ${fullUrl}`, code: ErrorCodes.NETWORK_ERROR },
 		413: {
 			message: `Request too large: ${(requestSize / 1024).toFixed(2)}KB`,
@@ -105,6 +175,59 @@ function generateRequestId(): string {
 
 function log(message: string, debug?: boolean): void {
 	if (debug) getLogger().debug(message);
+}
+
+/**
+ * Compose a caller-supplied AbortSignal with an optional timeout. Returns a
+ * combined signal, or `undefined` if neither was given.
+ *
+ * Uses `AbortSignal.timeout` (not setTimeout) so the timer is not throttled
+ * when the tab is hidden. Falls back to a manual timer for older runtimes.
+ */
+function composeSignal(
+	callerSignal: AbortSignal | undefined,
+	timeoutMs: number | undefined
+): { signal: AbortSignal | undefined; cleanup: () => void } {
+	const signals: AbortSignal[] = [];
+	let cleanup = () => {};
+
+	if (callerSignal) signals.push(callerSignal);
+
+	if (timeoutMs && timeoutMs > 0) {
+		if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+			signals.push(AbortSignal.timeout(timeoutMs));
+		} else {
+			// Fallback for runtimes without AbortSignal.timeout
+			const ctrl = new AbortController();
+			const id = setTimeout(() => ctrl.abort(), timeoutMs);
+			cleanup = () => clearTimeout(id);
+			signals.push(ctrl.signal);
+		}
+	}
+
+	if (signals.length === 0) return { signal: undefined, cleanup };
+	if (signals.length === 1) return { signal: signals[0], cleanup };
+
+	if (typeof AbortSignal !== 'undefined' && typeof (AbortSignal as any).any === 'function') {
+		return { signal: (AbortSignal as any).any(signals) as AbortSignal, cleanup };
+	}
+
+	// Manual composition fallback
+	const ctrl = new AbortController();
+	const onAbort = () => ctrl.abort();
+	for (const s of signals) {
+		if (s.aborted) {
+			ctrl.abort();
+			break;
+		}
+		s.addEventListener('abort', onAbort, { once: true });
+	}
+	const prevCleanup = cleanup;
+	cleanup = () => {
+		prevCleanup();
+		for (const s of signals) s.removeEventListener('abort', onAbort);
+	};
+	return { signal: ctrl.signal, cleanup };
 }
 
 // ============================================================================
@@ -198,6 +321,187 @@ async function handleResponse(
 }
 
 // ============================================================================
+// Single attempt
+// ============================================================================
+
+interface AttemptContext {
+	endpoint: string;
+	body: string;
+	requestSize: number;
+	fullUrl: string;
+	requestId: string;
+	headers: HeadersInit;
+	config: ComputeConfig | GrasshopperComputeConfig;
+}
+
+interface AttemptResult {
+	ok: true;
+	value: any;
+}
+
+interface AttemptRetry {
+	ok: false;
+	retry: true;
+	delayMs: number;
+	cause: RhinoComputeError;
+}
+
+interface AttemptFatal {
+	ok: false;
+	retry: false;
+	cause: RhinoComputeError;
+}
+
+async function attemptFetch(
+	ctx: AttemptContext,
+	retryPolicy: Required<RetryPolicy>,
+	attempt: number,
+	totalAttempts: number
+): Promise<AttemptResult | AttemptRetry | AttemptFatal> {
+	const { signal, cleanup } = composeSignal(ctx.config.signal, ctx.config.timeoutMs);
+	const startTime = performance.now();
+
+	try {
+		const response = await fetch(ctx.fullUrl, {
+			method: 'POST',
+			body: ctx.body,
+			headers: ctx.headers,
+			signal
+		});
+
+		// 429 with Retry-After or retryable 5xx → maybe retry
+		const isRetryableStatus =
+			RETRYABLE_STATUS.has(response.status) ||
+			(retryPolicy.retryOn429 && response.status === 429);
+
+		if (isRetryableStatus && attempt < totalAttempts - 1) {
+			const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
+			const delayMs = retryAfterMs ?? backoffDelay(attempt, retryPolicy);
+			// Drain the body so the connection can be reused
+			await response.text().catch(() => {});
+			return {
+				ok: false,
+				retry: true,
+				delayMs,
+				cause: new RhinoComputeError(
+					`HTTP ${response.status} ${response.statusText} (will retry)`,
+					ErrorCodes.NETWORK_ERROR,
+					{ statusCode: response.status, context: { requestId: ctx.requestId } }
+				)
+			};
+		}
+
+		const value = await handleResponse(
+			response,
+			ctx.fullUrl,
+			ctx.requestId,
+			ctx.requestSize,
+			ctx.config.serverUrl,
+			startTime,
+			ctx.config.debug
+		);
+		return { ok: true, value };
+	} catch (error) {
+		// Caller-aborted vs timeout-aborted distinction
+		if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+			const callerAborted = ctx.config.signal?.aborted === true;
+
+			if (callerAborted) {
+				// Caller cancellation is never retried — propagate immediately
+				return {
+					ok: false,
+					retry: false,
+					cause: new RhinoComputeError('Request aborted by caller', ErrorCodes.UNKNOWN_ERROR, {
+						context: {
+							endpoint: ctx.endpoint,
+							requestId: ctx.requestId,
+							requestSize: ctx.requestSize
+						},
+						originalError: error
+					})
+				};
+			}
+
+			// Timeout — retryable up to attempts limit
+			const fatal = new RhinoComputeError(
+				`Request timed out after ${ctx.config.timeoutMs}ms`,
+				ErrorCodes.TIMEOUT_ERROR,
+				{
+					context: {
+						serverUrl: ctx.config.serverUrl,
+						timeoutMs: ctx.config.timeoutMs,
+						url: ctx.fullUrl,
+						requestId: ctx.requestId,
+						endpoint: ctx.endpoint,
+						requestSize: ctx.requestSize
+					}
+				}
+			);
+			if (attempt < totalAttempts - 1) {
+				return { ok: false, retry: true, delayMs: backoffDelay(attempt, retryPolicy), cause: fatal };
+			}
+			return { ok: false, retry: false, cause: fatal };
+		}
+
+		// Network error (TypeError) — retryable
+		if (error instanceof TypeError) {
+			const fatal = new RhinoComputeError(
+				`Network error: ${error.message}`,
+				ErrorCodes.NETWORK_ERROR,
+				{
+					context: {
+						serverUrl: ctx.config.serverUrl,
+						url: ctx.fullUrl,
+						requestId: ctx.requestId,
+						endpoint: ctx.endpoint,
+						requestSize: ctx.requestSize
+					},
+					originalError: error
+				}
+			);
+			if (attempt < totalAttempts - 1) {
+				return { ok: false, retry: true, delayMs: backoffDelay(attempt, retryPolicy), cause: fatal };
+			}
+			return { ok: false, retry: false, cause: fatal };
+		}
+
+		// RhinoComputeError thrown from handleResponse — already has full context.
+		// Retryable only if it carries a retryable status code.
+		if (error instanceof RhinoComputeError) {
+			const status = error.statusCode;
+			const retryable =
+				status !== undefined &&
+				(RETRYABLE_STATUS.has(status) || (retryPolicy.retryOn429 && status === 429));
+			if (retryable && attempt < totalAttempts - 1) {
+				return {
+					ok: false,
+					retry: true,
+					delayMs: backoffDelay(attempt, retryPolicy),
+					cause: error
+				};
+			}
+			return { ok: false, retry: false, cause: error };
+		}
+
+		// Unknown — wrap and don't retry
+		return {
+			ok: false,
+			retry: false,
+			cause: new RhinoComputeError(
+				error instanceof Error ? error.message : String(error),
+				ErrorCodes.UNKNOWN_ERROR,
+				{
+					context: { endpoint: ctx.endpoint, requestId: ctx.requestId },
+					originalError: error instanceof Error ? error : new Error(String(error))
+				}
+			)
+		};
+	} finally {
+		cleanup();
+	}
+}
+
+// ============================================================================
 // Main Function
 // ============================================================================
 
@@ -210,18 +514,21 @@ async function handleResponse(
  * @typeParam E - The endpoint name (e.g., 'grasshopper', 'io'). Determines the response type for better type safety.
  * @param endpoint - The Compute API endpoint (e.g., 'grasshopper', 'io', 'mesh').
  * @param args - Pre-prepared arguments for the request body.
- * @param config - Compute configuration (server URL, API key, timeout, debug).
+ * @param config - Compute configuration (server URL, API key, timeout, debug, retry, signal).
  * @returns The parsed JSON response from the server, typed according to the endpoint.
  *
  * @example
  * // Basic usage for the Grasshopper endpoint:
  * const response = await fetchRhinoCompute(
  *   'grasshopper',
+ *   { ... },
  *   {
- *     pointer: { url: 'https://example.com/definition.gh' },
- *     values: [{ ParamName: 'x', InnerTree: { '0': [{ type: 'System.Double', data: 10 }] } }]
- *   },
- *   { serverUrl: 'https://my-server.com', debug: true, timeoutMs: 30000 }
+ *     serverUrl: 'https://my-server.com',
+ *     debug: true,
+ *     timeoutMs: 30_000,
+ *     retry: { attempts: 2 },
+ *     signal: controller.signal,
+ *   }
  * );
  */
 export async function fetchRhinoCompute<E extends Endpoint>(
@@ -233,6 +540,9 @@ export async function fetchRhinoCompute<E extends Endpoint>(
 	const body = JSON.stringify(args);
 	const requestSize = body.length;
 	const fullUrl = buildUrl(endpoint, config.serverUrl);
+	const headers = buildHeaders(requestId, config);
+	const retryPolicy = resolveRetryPolicy(config.retry);
+	const totalAttempts = retryPolicy.attempts + 1;
 
 	if (config.debug) {
 		const sizeKb = (requestSize / 1024).toFixed(2);
@@ -240,73 +550,49 @@ export async function fetchRhinoCompute<E extends Endpoint>(
 		log(`${emoji} Starting compute request [${requestId}]: ${endpoint} (${sizeKb}KB)`, true);
 	}
 
-	const controller = new AbortController();
-	const timeoutId = config.timeoutMs
-		? setTimeout(() => controller.abort(), config.timeoutMs)
-		: null;
+	const ctx: AttemptContext = {
+		endpoint,
+		body,
+		requestSize,
+		fullUrl,
+		requestId,
+		headers,
+		config
+	};
 
-	try {
-		const startTime = performance.now();
-		const response = await fetch(fullUrl, {
-			method: 'POST',
-			body,
-			headers: buildHeaders(requestId, config),
-			signal: controller.signal
-		});
+	let lastError: RhinoComputeError | null = null;
 
-		return await handleResponse(
-			response,
-			fullUrl,
-			requestId,
-			requestSize,
-			config.serverUrl,
-			startTime,
-			config.debug
-		);
-	} catch (error) {
-		if (error instanceof Error && error.name === 'AbortError' && config.timeoutMs) {
-			throw new RhinoComputeError(
-				`Request timed out after ${config.timeoutMs}ms`,
-				ErrorCodes.TIMEOUT_ERROR,
-				{
-					context: {
-						serverUrl: config.serverUrl,
-						timeoutMs: config.timeoutMs,
-						url: fullUrl,
-						requestId,
-						args
-					}
-				}
+	for (let attempt = 0; attempt < totalAttempts; attempt++) {
+		const result = await attemptFetch(ctx, retryPolicy, attempt, totalAttempts);
+
+		if (result.ok) return result.value as ComputeResponseFor<E>;
+
+		if (!result.retry) throw result.cause;
+
+		lastError = result.cause;
+		if (config.debug) {
+			log(
+				`🔁 Request [${requestId}] retrying after ${result.delayMs}ms (attempt ${attempt + 2}/${totalAttempts}): ${result.cause.message}`,
+				true
 			);
 		}
 
-		// Handle fetch errors (network issues, connection refused, etc.)
-		if (error instanceof TypeError) {
-			throw new RhinoComputeError(`Network error: ${error.message}`, ErrorCodes.NETWORK_ERROR, {
-				context: {
-					serverUrl: config.serverUrl,
-					url: fullUrl,
-					requestId,
-					endpoint
-				},
-				originalError: error
+		try {
+			await sleep(result.delayMs, config.signal);
+		} catch {
+			// Caller cancelled during backoff
+			throw new RhinoComputeError('Request aborted by caller', ErrorCodes.UNKNOWN_ERROR, {
+				context: { endpoint, requestId, requestSize },
+				originalError: lastError
 			});
 		}
-
-		// Wrap any unhandled errors
-		if (error instanceof RhinoComputeError) {
-			throw error;
-		}
-
-		throw new RhinoComputeError(
-			error instanceof Error ? error.message : String(error),
-			ErrorCodes.UNKNOWN_ERROR,
-			{
-				context: { endpoint, requestId },
-				originalError: error instanceof Error ? error : new Error(String(error))
-			}
-		);
-	} finally {
-		if (timeoutId !== null) clearTimeout(timeoutId);
 	}
+
+	// Exhausted retries — throw the last seen error
+	throw (
+		lastError ??
+		new RhinoComputeError('Unknown error after retries', ErrorCodes.UNKNOWN_ERROR, {
+			context: { endpoint, requestId, requestSize }
+		})
+	);
 }

@@ -1,4 +1,40 @@
-# selva-compute
+# @selvajs/compute
+
+## 1.5.0
+
+### Minor Changes
+
+- feat: robust transport layer and SolveScheduler for managing solves
+
+  **Transport robustness** (`fetchRhinoCompute`, `GrasshopperClient.solve`)
+  - Switch to `AbortSignal.timeout` so per-request timeouts are not throttled when the tab is backgrounded.
+  - Accept a caller-supplied `signal` on `ComputeConfig` and as a per-call override on `client.solve(definition, tree, { signal, timeoutMs, retry })`. Composes with the internal timeout via `AbortSignal.any` (with fallback for older runtimes).
+  - Add a configurable `retry` policy with exponential backoff + jitter for transient errors (502 / 503 / 504, network errors, and timeouts). Caller cancellation is never retried.
+  - Honor `Retry-After` on 429 responses (toggle via `retry.retryOn429`).
+  - Scrub the request `args` from timeout/network error contexts; keep `requestId`, `endpoint`, `requestSize`, `url`.
+
+  **`SolveScheduler`** — new opt-in class for managing many short solves and few long ones from one place
+  - Three scheduling modes:
+    - `latest-wins` — one in flight, supersede pending, abort in-flight when newer values arrive (slider scrubs).
+    - `queue` — FIFO with `maxConcurrent` cap (submit-job flows).
+    - `parallel` — concurrent up to `maxConcurrent` (closest to plain `client.solve`).
+  - Per-call and bulk cancellation: `solve(def, tree, { signal })` and `scheduler.cancelAll()`.
+  - Optional response cache (LRU + TTL) keyed by a stable hash of `(definition, dataTree)`.
+  - Lifecycle hooks: `onStart`, `onSettle`, `onSuperseded`.
+  - Observable state: `subscribe()`, `isSolving`, `hasPending`, `lastResult`, `lastError`, `lastDurationMs`, `inFlightCount`, `queueDepth`.
+  - Created via `client.createScheduler(options)`; multiple schedulers can share one client.
+
+  **New public exports**
+  - `SolveScheduler`, `hashSolveInput`
+  - Types: `SchedulerMode`, `SolveSchedulerOptions`, `CacheOptions`, `SolveContext`, `SolveResult`, `SolveExecutor`, `SolveOptions`, `RetryPolicy`
+
+  No breaking changes — `client.solve(definition, tree)` works exactly as before; the third argument is optional.
+
+### Patch Changes
+
+- 9269727: fix: filter invisible objects from raycaster intersections
+
+  Click and mousemove event handlers now exclude objects where `visible` is `false` from raycaster hit results, preventing interactions with hidden scene objects.
 
 ## 1.4.1
 
