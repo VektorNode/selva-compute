@@ -2,11 +2,7 @@ import { RhinoComputeError, ErrorCodes } from '@/core/errors';
 import type { RetryPolicy } from '@/core/types';
 import { getLogger } from '@/core/utils/logger';
 
-import type {
-	DataTree,
-	GrasshopperComputeResponse,
-	GrasshopperComputeConfig
-} from '../types';
+import type { DataTree, GrasshopperComputeResponse, GrasshopperComputeConfig } from '../types';
 import { hashSolveInput } from './stable-hash';
 
 /**
@@ -44,14 +40,19 @@ export interface SolveSchedulerOptions {
 export interface SolveContext {
 	/** Stable hash of (definition, dataTree). */
 	key: string;
-	/** Wall-clock timestamp when scheduler.solve() was called. */
+	/** Timestamp when scheduler.solve() was called. */
 	enqueuedAt: number;
-	/** Wall-clock timestamp when execution actually started (after queueing). */
+	/** Timestamp when execution actually started (after queueing). */
 	startedAt: number | null;
 }
 
 export type SolveResult =
-	| { status: 'success'; response: GrasshopperComputeResponse; durationMs: number; fromCache: boolean }
+	| {
+			status: 'success';
+			response: GrasshopperComputeResponse;
+			durationMs: number;
+			fromCache: boolean;
+	  }
 	| { status: 'error'; error: RhinoComputeError; durationMs: number }
 	| { status: 'superseded' };
 
@@ -67,6 +68,8 @@ interface PendingItem {
 	resolve: (response: GrasshopperComputeResponse) => void;
 	reject: (error: RhinoComputeError) => void;
 	externalSignal?: AbortSignal;
+	/** Set once the promise has been settled, so a late executor rejection becomes a no-op. */
+	settled?: { error: RhinoComputeError } | { ok: true };
 }
 
 interface InFlightItem extends PendingItem {
@@ -226,10 +229,12 @@ export class SolveScheduler {
 	 * Schedule a solve. Returns a promise that:
 	 * - Resolves with the compute response on success.
 	 * - Rejects with `RhinoComputeError` on failure.
-	 * - Rejects with `code: ErrorCodes.UNKNOWN_ERROR` and `message: 'Superseded'`
-	 *   when the call was canceled because newer values arrived (latest-wins mode).
+	 * - Rejects with `code: ErrorCodes.SUPERSEDED` when the call was canceled because
+	 *   newer values arrived (latest-wins mode).
+	 * - Rejects with `code: ErrorCodes.ABORTED` when the call was canceled via
+	 *   caller-supplied signal or `cancelAll()`.
 	 *
-	 * Caller-supplied `signal` cancels just this call (rejects with abort error).
+	 * Caller-supplied `signal` cancels just this call (rejects with `ABORTED`).
 	 */
 	solve(
 		definition: string | Uint8Array,
@@ -284,7 +289,9 @@ export class SolveScheduler {
 
 			// External signal cancellation — reject immediately if already aborted
 			if (item.externalSignal?.aborted) {
-				reject(this.makeAbortError(ctx));
+				const abortErr = this.makeAbortError(ctx);
+				item.settled = { error: abortErr };
+				reject(abortErr);
 				return;
 			}
 
@@ -314,16 +321,10 @@ export class SolveScheduler {
 				break;
 			}
 
-			case 'queue': {
-				if (this.inFlight.size < this.maxConcurrent) {
-					this.execute(item);
-				} else {
-					this.fifoQueue.push(item);
-				}
-				break;
-			}
-
+			case 'queue':
 			case 'parallel': {
+				// Same dispatch logic — the modes differ only in `maxConcurrent`'s
+				// default (1 for queue, 4 for parallel), set in the constructor.
 				if (this.inFlight.size < this.maxConcurrent) {
 					this.execute(item);
 				} else {
@@ -361,6 +362,12 @@ export class SolveScheduler {
 
 			if (this.cacheEnabled) this.writeCache(item.ctx.key, response);
 
+			if (item.settled) {
+				// Already superseded mid-flight — drop the late success silently.
+				return;
+			}
+			item.settled = { ok: true };
+
 			this._lastResult = response;
 			this._lastError = null;
 			this._lastDurationMs = durationMs;
@@ -374,20 +381,17 @@ export class SolveScheduler {
 			});
 		} catch (error) {
 			const durationMs = performance.now() - startTime;
-			const err =
-				error instanceof RhinoComputeError
-					? error
-					: new RhinoComputeError(
-							error instanceof Error ? error.message : String(error),
-							ErrorCodes.UNKNOWN_ERROR,
-							{ originalError: error instanceof Error ? error : new Error(String(error)) }
-						);
+			const err = this.normalizeExecutionError(error, inflight);
+			const alreadySettled = !!inflight.settled;
 
 			this._lastError = err;
 			this._lastDurationMs = durationMs;
 
-			item.reject(err);
-			this.runHook(this.onSettle, item.ctx, { status: 'error', error: err, durationMs });
+			if (!alreadySettled) {
+				inflight.settled = { error: err };
+				item.reject(err);
+				this.runHook(this.onSettle, item.ctx, { status: 'error', error: err, durationMs });
+			}
 		} finally {
 			item.externalSignal?.removeEventListener('abort', externalAbortHandler);
 			this.inFlight.delete(inflight);
@@ -417,17 +421,49 @@ export class SolveScheduler {
 	}
 
 	private supersede(item: PendingItem): void {
-		const err = new RhinoComputeError('Superseded by newer solve', ErrorCodes.UNKNOWN_ERROR, {
+		if (item.settled) return;
+		const err = new RhinoComputeError('Superseded by newer solve', ErrorCodes.SUPERSEDED, {
 			context: { key: item.ctx.key, enqueuedAt: item.ctx.enqueuedAt }
 		});
+		item.settled = { error: err };
 		item.reject(err);
 		this.runHook(this.onSuperseded, item.ctx);
 	}
 
 	private makeAbortError(ctx: SolveContext): RhinoComputeError {
-		return new RhinoComputeError('Request aborted by caller', ErrorCodes.UNKNOWN_ERROR, {
+		return new RhinoComputeError('Request aborted by caller', ErrorCodes.ABORTED, {
 			context: { key: ctx.key, enqueuedAt: ctx.enqueuedAt }
 		});
+	}
+
+	private isAbortLikeError(error: unknown): boolean {
+		if (error instanceof Error) {
+			if (error.name === 'AbortError') return true;
+			if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+				return error.name === 'AbortError';
+			}
+		}
+		return false;
+	}
+
+	private normalizeExecutionError(error: unknown, item: InFlightItem): RhinoComputeError {
+		// If the item was already settled (e.g. by supersede), return that error so
+		// _lastError reflects the original cause rather than the downstream abort.
+		if (item.settled && 'error' in item.settled) {
+			return item.settled.error;
+		}
+
+		if (error instanceof RhinoComputeError) return error;
+
+		if (this.isAbortLikeError(error)) {
+			return this.makeAbortError(item.ctx);
+		}
+
+		return new RhinoComputeError(
+			error instanceof Error ? error.message : String(error),
+			ErrorCodes.UNKNOWN_ERROR,
+			{ originalError: error instanceof Error ? error : new Error(String(error)) }
+		);
 	}
 
 	// --------------------------------------------------------------------------
@@ -438,18 +474,35 @@ export class SolveScheduler {
 	cancelAll(): void {
 		// Reject pending
 		if (this.pendingForLatestWins) {
-			this.pendingForLatestWins.reject(this.makeAbortError(this.pendingForLatestWins.ctx));
+			this.rejectAsAborted(this.pendingForLatestWins);
 			this.pendingForLatestWins = null;
 		}
 		while (this.fifoQueue.length > 0) {
 			const item = this.fifoQueue.shift()!;
-			item.reject(this.makeAbortError(item.ctx));
+			this.rejectAsAborted(item);
 		}
 		// Abort in-flight — their finally blocks will reject their promises
 		for (const inflight of this.inFlight) {
+			if (!inflight.settled) {
+				const err = this.makeAbortError(inflight.ctx);
+				inflight.settled = { error: err };
+				inflight.reject(err);
+				this.runHook(this.onSettle, inflight.ctx, {
+					status: 'error',
+					error: err,
+					durationMs: inflight.ctx.startedAt ? performance.now() - inflight.ctx.startedAt : 0
+				});
+			}
 			inflight.controller.abort();
 		}
 		this.notify();
+	}
+
+	private rejectAsAborted(item: PendingItem): void {
+		if (item.settled) return;
+		const err = this.makeAbortError(item.ctx);
+		item.settled = { error: err };
+		item.reject(err);
 	}
 
 	// --------------------------------------------------------------------------

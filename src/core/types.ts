@@ -61,6 +61,8 @@ export interface ComputeConfig {
 	/** Enable debug logging to the console */
 	debug?: boolean;
 	/** Suppress browser security warnings in the console */
+	suppressBrowserWarning?: boolean;
+	/** @deprecated Renamed to `suppressBrowserWarning`. */
 	suppressClientSideWarning?: boolean;
 	/**
 	 * Per-request timeout in milliseconds. Set to `0` to disable (useful for long

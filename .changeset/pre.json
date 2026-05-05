@@ -5,6 +5,6 @@
     "@selvajs/compute": "1.5.1"
   },
   "changesets": [
-    "beta-mesh-decompression-fixes"
+    "structural-cleanup"
   ]
 }

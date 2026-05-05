@@ -28,12 +28,13 @@
 // ============================================================================
 
 export { GrasshopperResponseProcessor, GrasshopperClient } from './features/grasshopper';
+export type { SolveOptions } from './features/grasshopper';
 
 // ============================================================================
 // SCHEDULER (Robust scheduling for solves — sliders, queues, caching)
 // ============================================================================
-export { SolveScheduler, hashSolveInput } from './features/grasshopper';
 
+export { SolveScheduler, hashSolveInput } from './features/grasshopper';
 export type {
 	SchedulerMode,
 	CacheOptions,
@@ -60,40 +61,31 @@ export { fetchDefinitionIO, fetchParsedDefinitionIO } from './features/grasshopp
 // ============================================================================
 
 export { processInputs, processInput, TreeBuilder } from './features/grasshopper';
-
-export type { DataTreeValue } from './features/grasshopper/data-tree/data-tree';
+export type { DataTreeValue } from './features/grasshopper';
 
 // ============================================================================
 // FILE HANDLING (Extracting files from responses)
 // ============================================================================
 
-export {
-	extractFilesFromComputeResponse,
-	downloadFileData
-} from './features/grasshopper';
-
+export { extractFilesFromComputeResponse, downloadFileData } from './features/grasshopper';
 export type { ProcessedFile, FileData, FileBaseInfo } from './features/grasshopper';
 
 // ============================================================================
 // TYPE EXPORTS (Public types for this module)
 // ============================================================================
 
-// Core Grasshopper types
-
 export type {
 	DataTreePath,
 	DataItem,
 	DataTree,
+	DataTreeDefault,
+	DefaultValue,
+	InnerTreeData,
 	GrasshopperParsedIO,
 	GrasshopperParsedIORaw,
 	GrasshopperRequestSchema,
 	GrasshopperComputeResponse,
-	GrasshopperComputeConfig
-} from './features/grasshopper/types';
-
-// Input types
-
-export type {
+	GrasshopperComputeConfig,
 	InputParam,
 	NumericInputType,
 	TextInputType,
@@ -101,21 +93,16 @@ export type {
 	GeometryInputType,
 	InputParamSchema,
 	ValueListInputType,
-	DataTreeDefault,
-	DefaultValue,
-	FileInputType
-} from './features/grasshopper/types';
-
-// Output types
-
-export type { OutputParamSchema, OutputType, InnerTreeData } from './features/grasshopper/types';
+	FileInputType,
+	OutputParamSchema,
+	OutputType
+} from './features/grasshopper';
 
 export type { GetValuesOptions, GetValuesResult, ParsedContext } from './features/grasshopper';
 
-// Error and config types
+// ============================================================================
+// CORE RE-EXPORTS
+// ============================================================================
 
 export { RhinoComputeError } from './core';
-
 export type { ComputeConfig, RhinoModelUnit, RetryPolicy } from './core';
-
-export type { SolveOptions } from './features/grasshopper/client/grasshopper-client';

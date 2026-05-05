@@ -127,6 +127,87 @@ describe('SolveScheduler', () => {
 
 			expect(onSuperseded).toHaveBeenCalledTimes(1);
 		});
+
+		it('rejects superseded calls with ErrorCodes.SUPERSEDED', async () => {
+			const { executor } = deferredExecutor();
+			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'latest-wins' });
+
+			const first = scheduler.solve('def', [{ ParamName: 'x', InnerTree: {} } as any]);
+			scheduler.solve('def', [{ ParamName: 'y', InnerTree: {} } as any]).catch(() => {});
+
+			await expect(first).rejects.toMatchObject({ code: ErrorCodes.SUPERSEDED });
+		});
+
+		it('only the latest survives when many solves race during abort window', async () => {
+			const { executor, queue } = deferredExecutor();
+			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'latest-wins' });
+
+			const promises: Promise<GrasshopperComputeResponse>[] = [];
+			// Fire 10 solves back-to-back. Only the last should resolve; the rest
+			// should reject (in-flight ones with SUPERSEDED, pendings with SUPERSEDED too).
+			for (let i = 0; i < 10; i++) {
+				promises.push(scheduler.solve('def', [{ ParamName: `p${i}`, InnerTree: {} } as any]));
+			}
+
+			// All but the last should be settled as rejected (the last one is still pending/in-flight).
+			const settled = await Promise.allSettled(promises.slice(0, 9));
+			for (const s of settled) {
+				expect(s.status).toBe('rejected');
+				if (s.status === 'rejected') {
+					expect((s.reason as RhinoComputeError).code).toBe(ErrorCodes.SUPERSEDED);
+				}
+			}
+
+			// Wait for whatever solve actually got executed (could be the last one if
+			// the in-flight aborts have flushed) and release it.
+			await vi.waitFor(() => expect(queue.length).toBeGreaterThanOrEqual(1));
+			// Drain everything in the executor queue — we don't know how many made it
+			// past the abort window but the LAST scheduler.solve must succeed.
+			for (const q of queue) q.release(makeResponse('latest'));
+
+			await expect(promises[9]).resolves.toMatchObject({ filename: 'latest' });
+		});
+
+		it('preserves SUPERSEDED code even when new solve arrives in the abort window', async () => {
+			const { executor, queue } = deferredExecutor();
+			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'latest-wins' });
+
+			const first = scheduler.solve('def', [{ ParamName: 'a', InnerTree: {} } as any]);
+
+			// Second triggers abort of first — first.reject is called synchronously
+			// with SUPERSEDED. The executor's catch later sees AbortError, but the
+			// scheduler must NOT overwrite the rejection with an ABORTED code.
+			const second = scheduler.solve('def', [{ ParamName: 'b', InnerTree: {} } as any]);
+
+			// A third arrives during the abort window — second should also be SUPERSEDED.
+			const third = scheduler.solve('def', [{ ParamName: 'c', InnerTree: {} } as any]);
+
+			await expect(first).rejects.toMatchObject({ code: ErrorCodes.SUPERSEDED });
+			await expect(second).rejects.toMatchObject({ code: ErrorCodes.SUPERSEDED });
+
+			await vi.waitFor(() => expect(queue.length).toBeGreaterThanOrEqual(2));
+			// Release whichever in-flight is left — third should resolve.
+			for (const q of queue) q.release(makeResponse('c'));
+			await expect(third).resolves.toMatchObject({ filename: 'c' });
+		});
+
+		it('lastError reflects the original supersede cause, not the downstream abort', async () => {
+			const { executor, queue } = deferredExecutor();
+			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'latest-wins' });
+
+			scheduler.solve('def', [{ ParamName: 'x', InnerTree: {} } as any]).catch(() => {});
+			const second = scheduler.solve('def', [{ ParamName: 'y', InnerTree: {} } as any]);
+
+			// Wait for the aborted first to flush its finally and the second to run.
+			await vi.waitFor(() => expect(queue.length).toBeGreaterThanOrEqual(2));
+
+			// _lastError after the abort settles should be SUPERSEDED, not UNKNOWN_ERROR
+			// (the executor's AbortError must not overwrite the supersede).
+			expect(scheduler.lastError?.code).toBe(ErrorCodes.SUPERSEDED);
+
+			queue[1].release(makeResponse('y'));
+			await expect(second).resolves.toMatchObject({ filename: 'y' });
+		});
 	});
 
 	describe('queue mode', () => {
@@ -213,9 +294,22 @@ describe('SolveScheduler', () => {
 			const scheduler = new SolveScheduler(executor, baseConfig);
 			const ctrl = new AbortController();
 			ctrl.abort();
-			await expect(
-				scheduler.solve('def', [], { signal: ctrl.signal })
-			).rejects.toMatchObject({ code: ErrorCodes.UNKNOWN_ERROR });
+			await expect(scheduler.solve('def', [], { signal: ctrl.signal })).rejects.toMatchObject({
+				code: ErrorCodes.ABORTED
+			});
+		});
+
+		it('per-call signal aborts in-flight with ErrorCodes.ABORTED', async () => {
+			const { executor } = deferredExecutor();
+			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'queue' });
+
+			const ctrl = new AbortController();
+			const p = scheduler.solve('def', [{ ParamName: 'a', InnerTree: {} } as any], {
+				signal: ctrl.signal
+			});
+
+			ctrl.abort();
+			await expect(p).rejects.toMatchObject({ code: ErrorCodes.ABORTED });
 		});
 	});
 

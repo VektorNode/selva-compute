@@ -85,13 +85,7 @@ export function getLogger(): Logger {
  * ```
  */
 export function setLogger(logger: Logger | Console | null): void {
-	if (logger === null) {
-		internalLogger = new NoOpLogger();
-	} else if ('debug' in logger && 'info' in logger && 'warn' in logger && 'error' in logger) {
-		internalLogger = logger as Logger;
-	} else {
-		internalLogger = new ConsoleLogger();
-	}
+	internalLogger = logger === null ? new NoOpLogger() : (logger as Logger);
 }
 
 /**

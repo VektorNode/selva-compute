@@ -11,6 +11,13 @@ export interface SerializableMaterial {
 
 /**
  * Metadata for a single mesh within a batch.
+ *
+ * Offsets and counts are expressed in **vertex-count units** (not float components) and
+ * **index-count units**. To address the typed-array storage:
+ *   - vertex component offset = `vertexStart * 3`
+ *   - vertex component count  = `vertexCount * 3`
+ *   - index byte offset       = `indexStart * 4`
+ *   - index count             = `indexCount`
  */
 export interface MeshMetadata {
 	name: string;
@@ -19,12 +26,15 @@ export interface MeshMetadata {
 	/** Original index in the GH input tree before material grouping. Combined with
 	 *  MeshBatch.sourceComponentId to uniquely identify the GH source geometry. */
 	originalIndex: number;
+	/** Number of vertices in this mesh (each vertex is 3 components: x, y, z). */
 	vertexCount: number;
-	faceCount: number;
-	/** Offset in the combined vertex array (in number of floats) */
-	vertexOffset: number;
-	/** Offset in the combined face index array (in number of integers) */
-	faceOffset: number;
+	/** Number of indices in this mesh (3 per triangle). */
+	indexCount: number;
+	/** Index of this mesh's first vertex in the combined vertex array, in vertex-count units.
+	 *  The corresponding component offset into the int16/float32 typed array is `vertexStart * 3`. */
+	vertexStart: number;
+	/** Index of this mesh's first index in the combined index array, in index-count units. */
+	indexStart: number;
 	/** Arbitrary key-value pairs from the GH Metadata input */
 	metadata?: Record<string, string>;
 }
@@ -41,13 +51,18 @@ export interface MaterialGroup {
 
 /**
  * Batched mesh data optimized for Three.js rendering.
+ *
+ * `compressedData` contains the binary "SLVA" blob (header + metadata JSON + quantized int16 or
+ * float32 vertices + uint32 indices), base64-encoded for transit inside the values JSON envelope.
+ * The blob is opaque to the outer JSON: a future binary WebSocket frame can drop the base64 step
+ * without changing this shape.
  */
 export interface MeshBatch {
 	/** Array of unique materials */
 	materials: SerializableMaterial[];
 	/** Groups of meshes organized by material */
 	groups: MaterialGroup[];
-	/** Compressed binary data containing all vertices and faces */
+	/** Base64-encoded binary blob (SLVA wire format). */
 	compressedData: string;
 	/** InstanceGuid of the WebDisplay GH component that produced this batch.
 	 *  Combined with MeshMetadata.originalIndex to backtrack any mesh to its GH source. */
@@ -55,11 +70,18 @@ export interface MeshBatch {
 }
 
 /**
- * Decompressed mesh data.
+ * Decoded geometry payload from a binary mesh batch blob.
+ *
+ * For int16 batches the parser also exposes `origin` and `scale` so the consumer can either
+ * dequantize on the GPU (via `BufferAttribute(arr, 3, true)` + a per-mesh transform matrix) or
+ * dequantize on the CPU as needed. For float32 batches `origin = (0,0,0)` and `scale = (1,1,1)`.
  */
 export interface DecompressedMeshData {
-	vertices: Float32Array;
-	faces: Uint32Array;
+	flags: number;
+	vertices: Int16Array | Float32Array;
+	indices: Uint32Array;
+	origin: [number, number, number];
+	scale: [number, number, number];
 }
 
 /**

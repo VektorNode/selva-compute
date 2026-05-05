@@ -6,20 +6,12 @@
  */
 export function toCamelCase(str: string, options: { preserveSpaces?: boolean } = {}): string {
 	const { preserveSpaces = false } = options;
-	let s = str.trim();
-	if (!preserveSpaces) {
-		// Remove spaces, dashes, and underscores, camelCase the next letter
-		s = s
-			.replace(/^[A-Z]/, (m) => m.toLowerCase())
-			.replace(/[\s-_]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''));
-		return s;
-	} else {
-		// Only camelCase after dashes/underscores, preserve spaces
-		s =
-			s.charAt(0).toLowerCase() +
-			s.slice(1).replace(/[-_](.)/g, (_, c) => (c ? c.toUpperCase() : ''));
-		return s;
-	}
+	// Whitespace acts as a separator unless we're explicitly preserving it.
+	const sep = preserveSpaces ? /[-_]+(.)?/g : /[\s-_]+(.)?/g;
+	const head = str.trim();
+	return (
+		head.charAt(0).toLowerCase() + head.slice(1).replace(sep, (_, c) => (c ? c.toUpperCase() : ''))
+	);
 }
 
 /**

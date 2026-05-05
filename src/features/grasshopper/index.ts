@@ -8,13 +8,14 @@
 // ============================================================================
 // CLIENT API (Recommended)
 // ============================================================================
-export { GrasshopperClient, GrasshopperResponseProcessor } from './client';
-export type { SolveOptions } from './client';
+export { default as GrasshopperClient } from './client/grasshopper-client';
+export type { SolveOptions } from './client/grasshopper-client';
+export { default as GrasshopperResponseProcessor } from './client/grasshopper-response-processor';
 
 // ============================================================================
 // SCHEDULER
 // ============================================================================
-export { SolveScheduler, hashSolveInput } from './scheduler';
+export { SolveScheduler } from './scheduler/solve-scheduler';
 export type {
 	SchedulerMode,
 	CacheOptions,
@@ -22,38 +23,44 @@ export type {
 	SolveContext,
 	SolveResult,
 	SolveExecutor
-} from './scheduler';
+} from './scheduler/solve-scheduler';
+export { hashSolveInput, stableStringify, fnv1a } from './scheduler/stable-hash';
 
 // ============================================================================
 // COMPUTATION
 // ============================================================================
-export { solveGrasshopperDefinition } from './compute';
+export { solveGrasshopperDefinition } from './compute/solve';
 
 // ============================================================================
 // I/O PROCESSING
 // ============================================================================
-export { fetchDefinitionIO, fetchParsedDefinitionIO, processInput, processInputs } from './io';
+export { fetchDefinitionIO, fetchParsedDefinitionIO } from './io/definition-io';
 export {
-	getValues,
-	getValue,
-	extractFileData,
-	registerDecoder,
-	decodeRhinoGeometry,
-	decodeRhinoObject
-} from './io';
-export type { GetValuesOptions, GetValuesResult, ParsedContext, DecodeRhinoOptions } from './io';
+	processInput,
+	processInputs,
+	processInputWithError,
+	processInputsWithErrors
+} from './io/input/input-processors';
+export { getValues, getValue, extractFileData } from './io/output/response-processors';
+export type {
+	GetValuesOptions,
+	GetValuesResult,
+	ParsedContext
+} from './io/output/response-processors';
+export { registerDecoder, decodeRhinoGeometry, decodeRhinoObject } from './io/output/rhino-decoder';
+export type { DecodeRhinoOptions } from './io/output/rhino-decoder';
 
 // ============================================================================
 // DATA STRUCTURES
 // ============================================================================
-export { TreeBuilder } from './data-tree';
-export type { DataTreeValue } from './data-tree';
+export { TreeBuilder } from './data-tree/data-tree';
+export type { DataTreeValue } from './data-tree/data-tree';
 
 // ============================================================================
 // FILE HANDLING
 // ============================================================================
-export { extractFilesFromComputeResponse, downloadFileData } from './file-handling';
-export type { ProcessedFile, FileData, FileBaseInfo } from './file-handling';
+export { extractFilesFromComputeResponse, downloadFileData } from './file-handling/handle-files';
+export type { ProcessedFile, FileData, FileBaseInfo } from './file-handling/types';
 
 // ============================================================================
 // TYPES
@@ -75,6 +82,7 @@ export type {
 	GeometryInputType,
 	ValueListInputType,
 	FileInputType,
+	ColorInputType,
 	InputParam,
 	GrasshopperBaseSchema,
 	GrasshopperDefinitionSource,
@@ -85,5 +93,6 @@ export type {
 	InputParamSchema,
 	OutputParamSchema,
 	GrasshopperParsedIORaw,
-	GrasshopperParsedIO
+	GrasshopperParsedIO,
+	InputParseError
 } from './types';

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { buildMeshBatch } from '@tests/helpers/mesh-batch-builder';
+import { buildMeshBatch, encodeBatchPayload } from '@tests/helpers/mesh-batch-builder';
 
 import { parseMeshBatch, parseMeshBatchObject } from '../batch-parser';
 
@@ -149,11 +149,14 @@ describe('parseMeshBatchObject', () => {
 			// Derived from applyCoordinateTransform with cos(-PI/2)=0, sin(-PI/2)=-1:
 			//   y' = y*cos - z*sin = z
 			//   z' = y*sin + z*cos = -y
+			// Use forceFloat32 so we can compare exact float values without int16 quantization
+			// noise (the quantized path is covered by binary-parser.test.ts).
 			const { batch, rawVertices } = buildMeshBatch({
 				materialCount: 1,
 				meshCount: 1,
 				vertsPerMesh: 3,
-				seed: 42
+				seed: 42,
+				forceFloat32: true
 			});
 
 			const meshes = await parseMeshBatchObject(batch, {
@@ -179,7 +182,8 @@ describe('parseMeshBatchObject', () => {
 				materialCount: 1,
 				meshCount: 1,
 				vertsPerMesh: 3,
-				seed: 7
+				seed: 7,
+				forceFloat32: true
 			});
 
 			const meshes = await parseMeshBatchObject(batch, {
@@ -212,10 +216,17 @@ describe('parseMeshBatchObject', () => {
 		});
 
 		it('reflects material color from input', async () => {
-			const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
-			batch.materials[0]!.color = '#ff0000';
+			// Materials live inside the binary blob's metadata header. Mutate the materials and
+			// re-encode so the parser sees the change — mirrors what the C# writer does end-to-end.
+			const built = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
+			built.batch.materials[0]!.color = '#ff0000';
+			built.batch.compressedData = encodeBatchPayload(built.rawVertices, built.rawFaces, {
+				materials: built.batch.materials,
+				groups: built.batch.groups,
+				sourceComponentId: built.batch.sourceComponentId
+			});
 
-			const meshes = await parseMeshBatchObject(batch, {
+			const meshes = await parseMeshBatchObject(built.batch, {
 				mergeByMaterial: true,
 				applyTransforms: false
 			});

@@ -109,6 +109,23 @@ function extractItemValue(data: any, type: string, parseValues: boolean, rhino?:
 	return decodeBySystemType(raw, type, rhino);
 }
 
+/**
+ * Type guard for {@link FileData}. The Compute server emits these as JSON
+ * blobs inside `FileData`-typed values; this checks that the parsed shape
+ * has every required field before we trust it.
+ */
+function isFileData(value: unknown): value is FileData {
+	if (!value || typeof value !== 'object') return false;
+	const v = value as Record<string, unknown>;
+	return (
+		typeof v.fileName === 'string' &&
+		typeof v.fileType === 'string' &&
+		'data' in v &&
+		typeof v.isBase64Encoded === 'boolean' &&
+		typeof v.subFolder === 'string'
+	);
+}
+
 // Traversal helper
 /**
  * Iterates over every data item within a Grasshopper tree structure.
@@ -199,15 +216,8 @@ export function extractFileData(response: GrasshopperComputeResponse): FileData[
 			if (!item.type.includes(FILE_DATA_TYPE)) return;
 
 			const parsed = tryDecodeJSON(item.data);
-			if (
-				parsed &&
-				parsed.fileName &&
-				parsed.fileType &&
-				'data' in parsed &&
-				typeof parsed.isBase64Encoded === 'boolean' &&
-				typeof parsed.subFolder === 'string'
-			) {
-				output.push(parsed as FileData);
+			if (isFileData(parsed)) {
+				output.push(parsed);
 			}
 		});
 	}
