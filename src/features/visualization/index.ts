@@ -24,7 +24,11 @@ export * as Materials from './threejs/three-materials.js';
 // ============================================================================
 
 export { getThreeMeshesFromComputeResponse, SCALE_FACTORS } from './webdisplay/webdisplay-parser';
-export { parseMeshBatch, parseMeshBatchObject } from './webdisplay/batch-parser';
+export {
+	parseMeshBatch,
+	parseMeshBatchObject,
+	parseMeshBatchBlob
+} from './webdisplay/batch-parser';
 export {
 	parseBinaryMeshBatch,
 	BINARY_MESH_MAGIC,
