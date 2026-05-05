@@ -14,8 +14,6 @@ import type { MeshBatch, MaterialGroup, SerializableMaterial } from './types';
  * base64-encoded into the outer JSON envelope. We `JSON.parse` the small envelope, then hand the
  * blob to `parseBinaryMeshBatch` which decodes the geometry without ever turning it into a string.
  *
- * @internal Low-level mesh parsing — keep internal to `@selvajs/compute`.
- *
  * @param batchJson - JSON string containing the batched mesh data
  * @param options - Rendering options
  * @returns Promise resolving to array of Three.js mesh objects
@@ -60,8 +58,6 @@ export async function parseMeshBatch(
  * The path is synchronous internally — `parseBinaryMeshBatch` does no IO, just typed-array views
  * over the blob. The function stays `async` so callers don't have to change shape if we move
  * parsing into a worker later.
- *
- * @internal Low-level mesh parsing — keep internal to `@selvajs/compute`.
  *
  * @param batch - MeshBatch object
  * @param options - Rendering options
