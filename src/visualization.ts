@@ -26,4 +26,4 @@ export type {
 	EventConfig
 } from './features/visualization/types';
 
-export type { MeshExtractionOptions } from './features/visualization/webdisplay/types';
+export type { MeshExtractionOptions, MeshBatch } from './features/visualization/webdisplay/types';
