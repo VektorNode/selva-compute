@@ -5,6 +5,7 @@ import { getLogger } from '@/core';
 
 import { FLAG_FLOAT32, parseBinaryMeshBatch } from './binary-parser';
 
+import type { ParsedBinaryMeshBatch } from './binary-parser';
 import type { MeshBatch, MaterialGroup, SerializableMaterial } from './types';
 
 /**
@@ -89,96 +90,198 @@ export async function parseMeshBatchObject(
 		perfStart = debug ? performance.now() : 0
 	} = options ?? {};
 
-	let decodeTime = 0;
-	let meshCreateTime = 0;
-
 	try {
 		const decodeStart = performance.now();
 		const parsed = parseBinaryMeshBatch(batch.compressedData);
-		decodeTime = performance.now() - decodeStart;
+		const decodeTime = performance.now() - decodeStart;
 
-		// Prefer materials/groups from the blob's embedded metadata — that's the source of truth
-		// the C# writer emits. Fall back to the outer envelope for resilience (e.g. if a future
-		// transport drops them from the blob's metadata to save bytes).
-		const materialsSrc = parsed.metadata.materials ?? batch.materials;
-		const groups = parsed.metadata.groups ?? batch.groups;
-		const sourceComponentId = parsed.metadata.sourceComponentId ?? batch.sourceComponentId;
+		const blobBytes = debug ? approximateBase64DecodedBytes(batch.compressedData) : 0;
 
-		const isFloat32 = (parsed.flags & FLAG_FLOAT32) !== 0;
-
-		// Dequantize once up-front into a single Float32Array. Downstream code (per-group merging,
-		// computeVertexNormals, ground-offset, scaleFactor) all expect world-unit floats, and a
-		// single linear pass over the int16 buffer is far cheaper than the legacy gunzip + base64
-		// path. The Z-up -> Y-up rotation, when requested, is folded into the same pass.
-		const worldVertices = isFloat32
-			? maybeRotateFloat32Vertices(parsed.vertices as Float32Array, applyTransforms)
-			: dequantizeInt16(
-					parsed.vertices as Int16Array,
-					parsed.origin,
-					parsed.scale,
-					applyTransforms
-				);
-
-		if (debug) {
-			const blobBytes = approximateBase64DecodedBytes(batch.compressedData);
-			const wireBytes = parsed.vertices.byteLength + parsed.indices.byteLength;
-			getLogger().debug('Mesh Batch Stats:');
-			getLogger().debug(`  Materials: ${materialsSrc.length} | Groups: ${groups.length}`);
-			getLogger().debug(
-				`  Vertices: ${parsed.vertices.length / 3} | Indices: ${parsed.indices.length}`
-			);
-			getLogger().debug(`  Format: ${isFloat32 ? 'float32' : 'int16 quantized'}`);
-			getLogger().debug(
-				`  Blob: ${(blobBytes / 1024 / 1024).toFixed(2)} MB | Geometry on wire: ${(wireBytes / 1024 / 1024).toFixed(2)} MB`
-			);
-		}
-
-		const meshCreateStart = performance.now();
-		const materials = materialsSrc.map(createMaterial);
-
-		const meshes: THREE.Mesh[] = [];
-
-		for (const group of groups) {
-			if (mergeByMaterial && group.meshes.length > 1) {
-				const mergedMesh = createMergedMesh(group, worldVertices, parsed.indices, materials);
-				mergedMesh.userData.sourceComponentId = sourceComponentId ?? null;
-				meshes.push(mergedMesh);
-			} else {
-				const individualMeshes = createIndividualMeshes(
-					group,
-					worldVertices,
-					parsed.indices,
-					materials
-				);
-				for (const mesh of individualMeshes) {
-					mesh.userData.sourceComponentId = sourceComponentId ?? null;
-				}
-				meshes.push(...individualMeshes);
+		return buildMeshesFromParsed(parsed, {
+			mergeByMaterial,
+			applyTransforms,
+			scaleFactor,
+			debug,
+			parseTime,
+			decodeTime,
+			perfStart,
+			blobBytes,
+			fallback: {
+				materials: batch.materials,
+				groups: batch.groups,
+				sourceComponentId: batch.sourceComponentId
 			}
-		}
-
-		if (scaleFactor !== 1) {
-			for (const mesh of meshes) {
-				mesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
-			}
-		}
-
-		meshCreateTime = performance.now() - meshCreateStart;
-
-		if (debug) {
-			const totalTime = performance.now() - perfStart;
-			getLogger().debug('Performance:');
-			if (parseTime > 0) getLogger().debug(`  Parse JSON: ${parseTime.toFixed(2)}ms`);
-			getLogger().debug(`  Decode binary: ${decodeTime.toFixed(2)}ms`);
-			getLogger().debug(`  Create Meshes: ${meshCreateTime.toFixed(2)}ms`);
-			getLogger().debug(`  Total: ${totalTime.toFixed(2)}ms`);
-		}
-
-		return meshes;
+		});
 	} catch (error) {
 		getLogger().error('Error parsing mesh batch object:', error);
 		return [];
 	}
+}
+
+/**
+ * Parses a raw binary mesh batch blob (SLVA wire format) and creates Three.js meshes.
+ *
+ * Use this entry point when the blob arrives as a binary WebSocket frame (Phase 1b transport):
+ * the JSON envelope no longer carries `displayData`, so there's nothing to `JSON.parse`. The blob
+ * is self-describing — materials, groups, and `sourceComponentId` come from its embedded metadata
+ * header.
+ *
+ * @param blob - Raw blob bytes from a binary WebSocket frame.
+ * @param options - Rendering options.
+ * @returns Promise resolving to array of Three.js mesh objects.
+ */
+export async function parseMeshBatchBlob(
+	blob: ArrayBuffer | Uint8Array,
+	options?: {
+		/** Merge meshes with same material into single geometry */
+		mergeByMaterial?: boolean;
+		/** Apply coordinate system transformations */
+		applyTransforms?: boolean;
+		/** Scale factor to apply to meshes (e.g., for unit conversion) */
+		scaleFactor?: number;
+		/** Enable performance monitoring */
+		debug?: boolean;
+	}
+): Promise<THREE.Mesh[]> {
+	const {
+		mergeByMaterial = true,
+		applyTransforms = true,
+		scaleFactor = 1,
+		debug = false
+	} = options ?? {};
+
+	const perfStart = debug ? performance.now() : 0;
+
+	try {
+		const decodeStart = performance.now();
+		const parsed = parseBinaryMeshBatch(blob);
+		const decodeTime = performance.now() - decodeStart;
+
+		const blobBytes = blob instanceof Uint8Array ? blob.byteLength : blob.byteLength;
+
+		return buildMeshesFromParsed(parsed, {
+			mergeByMaterial,
+			applyTransforms,
+			scaleFactor,
+			debug,
+			parseTime: 0,
+			decodeTime,
+			perfStart,
+			blobBytes
+		});
+	} catch (error) {
+		getLogger().error('Error parsing mesh batch blob:', error);
+		return [];
+	}
+}
+
+interface BuildOptions {
+	mergeByMaterial: boolean;
+	applyTransforms: boolean;
+	scaleFactor: number;
+	debug: boolean;
+	parseTime: number;
+	decodeTime: number;
+	perfStart: number;
+	blobBytes: number;
+	/** Outer-envelope fallback when the blob's metadata is missing fields (defensive). */
+	fallback?: {
+		materials?: SerializableMaterial[];
+		groups?: MaterialGroup[];
+		sourceComponentId?: string;
+	};
+}
+
+function buildMeshesFromParsed(
+	parsed: ParsedBinaryMeshBatch,
+	opts: BuildOptions
+): Promise<THREE.Mesh[]> {
+	const {
+		mergeByMaterial,
+		applyTransforms,
+		scaleFactor,
+		debug,
+		parseTime,
+		decodeTime,
+		perfStart,
+		blobBytes,
+		fallback
+	} = opts;
+
+	const materialsSrc = parsed.metadata.materials ?? fallback?.materials ?? [];
+	const groups = parsed.metadata.groups ?? fallback?.groups ?? [];
+	const sourceComponentId = parsed.metadata.sourceComponentId ?? fallback?.sourceComponentId;
+
+	const isFloat32 = (parsed.flags & FLAG_FLOAT32) !== 0;
+
+	// Dequantize once up-front into a single Float32Array. Downstream code (per-group merging,
+	// computeVertexNormals, ground-offset, scaleFactor) all expect world-unit floats, and a single
+	// linear pass over the int16 buffer is far cheaper than the legacy gunzip + base64 path. The
+	// Z-up -> Y-up rotation, when requested, is folded into the same pass.
+	const worldVertices = isFloat32
+		? maybeRotateFloat32Vertices(parsed.vertices as Float32Array, applyTransforms)
+		: dequantizeInt16(
+				parsed.vertices as Int16Array,
+				parsed.origin,
+				parsed.scale,
+				applyTransforms
+			);
+
+	if (debug) {
+		const wireBytes = parsed.vertices.byteLength + parsed.indices.byteLength;
+		getLogger().debug('Mesh Batch Stats:');
+		getLogger().debug(`  Materials: ${materialsSrc.length} | Groups: ${groups.length}`);
+		getLogger().debug(
+			`  Vertices: ${parsed.vertices.length / 3} | Indices: ${parsed.indices.length}`
+		);
+		getLogger().debug(`  Format: ${isFloat32 ? 'float32' : 'int16 quantized'}`);
+		getLogger().debug(
+			`  Blob: ${(blobBytes / 1024 / 1024).toFixed(2)} MB | Geometry on wire: ${(wireBytes / 1024 / 1024).toFixed(2)} MB`
+		);
+	}
+
+	const meshCreateStart = performance.now();
+	const materials = materialsSrc.map(createMaterial);
+
+	const meshes: THREE.Mesh[] = [];
+
+	for (const group of groups) {
+		if (mergeByMaterial && group.meshes.length > 1) {
+			const mergedMesh = createMergedMesh(group, worldVertices, parsed.indices, materials);
+			mergedMesh.userData.sourceComponentId = sourceComponentId ?? null;
+			meshes.push(mergedMesh);
+		} else {
+			const individualMeshes = createIndividualMeshes(
+				group,
+				worldVertices,
+				parsed.indices,
+				materials
+			);
+			for (const mesh of individualMeshes) {
+				mesh.userData.sourceComponentId = sourceComponentId ?? null;
+			}
+			meshes.push(...individualMeshes);
+		}
+	}
+
+	if (scaleFactor !== 1) {
+		for (const mesh of meshes) {
+			mesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
+		}
+	}
+
+	const meshCreateTime = performance.now() - meshCreateStart;
+
+	if (debug) {
+		const totalTime = performance.now() - perfStart;
+		getLogger().debug('Performance:');
+		if (parseTime > 0) getLogger().debug(`  Parse JSON: ${parseTime.toFixed(2)}ms`);
+		getLogger().debug(`  Decode binary: ${decodeTime.toFixed(2)}ms`);
+		getLogger().debug(`  Create Meshes: ${meshCreateTime.toFixed(2)}ms`);
+		getLogger().debug(`  Total: ${totalTime.toFixed(2)}ms`);
+	}
+
+	return Promise.resolve(meshes);
 }
 
 // ============================================================================
