@@ -288,66 +288,45 @@ export class TreeBuilder {
 		paramName: string,
 		newValue: DataTreeValue
 	): TreeBuilder[] | DataTree[] {
-		// Check if we're working with TreeBuilder instances or InnerTree objects
-		const isDataTreeArray = trees.length > 0 && trees[0] instanceof TreeBuilder;
+		const isBuilderArray = trees.length > 0 && trees[0] instanceof TreeBuilder;
+		const builder = TreeBuilder.buildFromValue(paramName, newValue);
 
-		if (isDataTreeArray) {
-			// Handle DataTree[] instances
-			const dataTrees = trees as TreeBuilder[];
-			const existingIndex = dataTrees.findIndex((t) => t.getParamName() === paramName);
-			const tree = new TreeBuilder(paramName);
-
-			// Handle different input formats
-			if (
-				typeof newValue === 'object' &&
-				newValue !== null &&
-				!Array.isArray(newValue) &&
-				TreeBuilder.isDataTreeStructure(newValue)
-			) {
-				tree.fromDataTreeDefault(newValue as DataTreeDefault);
-			} else if (Array.isArray(newValue)) {
-				tree.appendFlat(newValue);
-			} else {
-				tree.appendFlat(newValue);
-			}
-
-			if (existingIndex !== -1) {
-				dataTrees[existingIndex] = tree;
-			} else {
-				dataTrees.push(tree);
-			}
-
-			return dataTrees;
-		} else {
-			// Handle InnerTree[] (compiled format)
-			const innerTrees = trees as DataTree[];
-			const existingIndex = innerTrees.findIndex((t) => t.ParamName === paramName);
-			const tree = new TreeBuilder(paramName);
-
-			// Handle different input formats
-			if (
-				typeof newValue === 'object' &&
-				newValue !== null &&
-				!Array.isArray(newValue) &&
-				TreeBuilder.isDataTreeStructure(newValue)
-			) {
-				tree.fromDataTreeDefault(newValue as DataTreeDefault);
-			} else if (Array.isArray(newValue)) {
-				tree.appendFlat(newValue);
-			} else {
-				tree.appendFlat(newValue);
-			}
-
-			const newTree = tree.toComputeFormat();
-
-			if (existingIndex !== -1) {
-				innerTrees[existingIndex] = newTree;
-			} else {
-				innerTrees.push(newTree);
-			}
-
-			return innerTrees;
+		if (isBuilderArray) {
+			const builders = trees as TreeBuilder[];
+			const idx = builders.findIndex((t) => t.getParamName() === paramName);
+			if (idx !== -1) builders[idx] = builder;
+			else builders.push(builder);
+			return builders;
 		}
+
+		// Empty arrays land here too — see the "empty array" characterization
+		// test in data-tree.test.ts: pins the current behavior of returning the
+		// compute-format shape rather than a TreeBuilder.
+		const dataTrees = trees as DataTree[];
+		const compiled = builder.toComputeFormat();
+		const idx = dataTrees.findIndex((t) => t.ParamName === paramName);
+		if (idx !== -1) dataTrees[idx] = compiled;
+		else dataTrees.push(compiled);
+		return dataTrees;
+	}
+
+	/**
+	 * Build a TreeBuilder from a single value, dispatching on shape:
+	 * DataTreeDefault structure, array, or scalar.
+	 */
+	private static buildFromValue(paramName: string, value: DataTreeValue): TreeBuilder {
+		const tree = new TreeBuilder(paramName);
+		if (
+			typeof value === 'object' &&
+			value !== null &&
+			!Array.isArray(value) &&
+			TreeBuilder.isDataTreeStructure(value)
+		) {
+			tree.fromDataTreeDefault(value as DataTreeDefault);
+		} else {
+			tree.appendFlat(value);
+		}
+		return tree;
 	}
 
 	/**
@@ -398,71 +377,56 @@ export class TreeBuilder {
 		trees: TreeBuilder[] | DataTree[],
 		paramName: string
 	): DataTreeValue | null {
-		// Check if we're working with TreeBuilder instances or InnerTree objects
-		const isDataTreeArray = trees.length > 0 && trees[0] instanceof TreeBuilder;
+		const isBuilderArray = trees.length > 0 && trees[0] instanceof TreeBuilder;
 
-		if (isDataTreeArray) {
-			// Handle DataTree[] instances
-			const dataTrees = trees as TreeBuilder[];
-			const tree = dataTrees.find((t) => t.getParamName() === paramName);
+		const values = isBuilderArray
+			? TreeBuilder.readFromBuilders(trees as TreeBuilder[], paramName)
+			: TreeBuilder.readFromDataTrees(trees as DataTree[], paramName);
 
-			if (!tree) {
-				return null;
-			}
+		if (values === null) return null;
+		if (values.length === 0) return null;
+		if (values.length === 1) return values[0];
+		return values;
+	}
 
-			const values = tree.flatten();
+	/**
+	 * Read all values for `paramName` across every branch of the matching builder.
+	 * Returns null when the builder isn't found.
+	 */
+	private static readFromBuilders(
+		builders: TreeBuilder[],
+		paramName: string
+	): DataTreeValue[] | null {
+		const tree = builders.find((t) => t.getParamName() === paramName);
+		return tree ? tree.flatten() : null;
+	}
 
-			if (values.length === 0) return null;
-			if (values.length === 1) return values[0];
-			return values;
-		} else {
-			// Handle InnerTree[] (compiled format)
-			const innerTrees = trees as DataTree[];
-			const tree = innerTrees.find((t) => t.ParamName === paramName);
+	/**
+	 * Read values from the first branch of the matching compiled InnerTree
+	 * (multi-branch responses are not flattened — current semantics, pinned by
+	 * the "reads from the first branch path only" test).
+	 */
+	private static readFromDataTrees(
+		dataTrees: DataTree[],
+		paramName: string
+	): DataTreeValue[] | null {
+		const tree = dataTrees.find((t) => t.ParamName === paramName);
+		if (!tree?.InnerTree) return null;
 
-			if (!tree) {
-				return null;
-			}
+		const firstKey = Object.keys(tree.InnerTree)[0];
+		if (!firstKey) return null;
 
-			const innerTree = tree.InnerTree;
+		// @ts-expect-error - Dynamic key access on innerTree
+		const items = tree.InnerTree[firstKey];
 
-			// Handle missing InnerTree
-			if (!innerTree) {
-				return null;
-			}
-
-			// Get the first path (usually "{0}")
-			const firstKey = Object.keys(innerTree)[0];
-			if (!firstKey) {
-				return null;
-			}
-
-			// @ts-expect-error - Dynamic key access on innerTree
-			const items = innerTree[firstKey];
-
-			// Handle array of values
-			if (Array.isArray(items)) {
-				// Single value: unwrap the data property
-				if (items.length === 1) {
-					const value = items[0]?.data;
-					return value !== undefined ? TreeBuilder.deserializeValue(value) : null;
-				}
-				// Multiple values: return array of deserialized values
-				return items
-					.map((item) =>
-						item?.data !== undefined ? TreeBuilder.deserializeValue(item.data) : null
-					)
-					.filter((v) => v !== null);
-			}
-
-			// Handle single object with data property
-			if (items?.data !== undefined) {
-				return TreeBuilder.deserializeValue(items.data);
-			}
-
-			// Return raw value
-			return items;
+		if (Array.isArray(items)) {
+			return items
+				.map((item) => (item?.data !== undefined ? TreeBuilder.deserializeValue(item.data) : null))
+				.filter((v): v is DataTreeValue => v !== null);
 		}
+
+		if (items?.data !== undefined) return [TreeBuilder.deserializeValue(items.data)];
+		return items !== undefined ? [items as DataTreeValue] : null;
 	}
 
 	/**

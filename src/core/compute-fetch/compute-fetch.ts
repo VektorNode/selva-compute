@@ -183,8 +183,10 @@ function log(message: string, debug?: boolean): void {
  *
  * Uses `AbortSignal.timeout` (not setTimeout) so the timer is not throttled
  * when the tab is hidden. Falls back to a manual timer for older runtimes.
+ *
+ * @internal exported for tests
  */
-function composeSignal(
+export function composeSignal(
 	callerSignal: AbortSignal | undefined,
 	timeoutMs: number | undefined
 ): { signal: AbortSignal | undefined; cleanup: () => void } {
@@ -371,13 +373,14 @@ async function attemptFetch(
 
 		// 429 with Retry-After or retryable 5xx → maybe retry
 		const isRetryableStatus =
-			RETRYABLE_STATUS.has(response.status) ||
-			(retryPolicy.retryOn429 && response.status === 429);
+			RETRYABLE_STATUS.has(response.status) || (retryPolicy.retryOn429 && response.status === 429);
 
 		if (isRetryableStatus && attempt < totalAttempts - 1) {
 			const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
 			const delayMs = retryAfterMs ?? backoffDelay(attempt, retryPolicy);
-			// Drain the body so the connection can be reused
+			// Drain the body so the connection can be reused on the next attempt.
+			// On the *final* attempt we deliberately fall through — handleResponse
+			// reads the body itself to surface the error context.
 			await response.text().catch(() => {});
 			return {
 				ok: false,
@@ -438,7 +441,12 @@ async function attemptFetch(
 				}
 			);
 			if (attempt < totalAttempts - 1) {
-				return { ok: false, retry: true, delayMs: backoffDelay(attempt, retryPolicy), cause: fatal };
+				return {
+					ok: false,
+					retry: true,
+					delayMs: backoffDelay(attempt, retryPolicy),
+					cause: fatal
+				};
 			}
 			return { ok: false, retry: false, cause: fatal };
 		}
@@ -460,7 +468,12 @@ async function attemptFetch(
 				}
 			);
 			if (attempt < totalAttempts - 1) {
-				return { ok: false, retry: true, delayMs: backoffDelay(attempt, retryPolicy), cause: fatal };
+				return {
+					ok: false,
+					retry: true,
+					delayMs: backoffDelay(attempt, retryPolicy),
+					cause: fatal
+				};
 			}
 			return { ok: false, retry: false, cause: fatal };
 		}

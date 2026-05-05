@@ -4,14 +4,9 @@ import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
 import { prepareGrasshopperArgs } from '../compute/solve';
 
-import {
-	InputParam,
-	GrasshopperParsedIO,
-	GrasshopperParsedIORaw,
-	IoResponseSchema
-} from '../types';
+import { GrasshopperParsedIO, GrasshopperParsedIORaw, IoResponseSchema } from '../types';
 
-import { processInputs } from './input/input-processors';
+import { processInputsWithErrors } from './input/input-processors';
 
 /**
  * Fetches raw input/output schemas from a Grasshopper definition.
@@ -88,10 +83,13 @@ export async function fetchParsedDefinitionIO(
 	definition: string | Uint8Array,
 	config: ComputeConfig
 ): Promise<GrasshopperParsedIO> {
-	warnIfClientSide('fetchParsedDefinitionIO', config.suppressClientSideWarning);
+	warnIfClientSide(
+		'fetchParsedDefinitionIO',
+		config.suppressBrowserWarning ?? config.suppressClientSideWarning
+	);
 
 	const { inputs: rawInputs, outputs } = await fetchDefinitionIO(definition, config);
-	const inputs: InputParam[] = processInputs(rawInputs);
+	const { inputs, parseErrors } = processInputsWithErrors(rawInputs);
 
-	return { inputs, outputs };
+	return parseErrors.length > 0 ? { inputs, outputs, parseErrors } : { inputs, outputs };
 }

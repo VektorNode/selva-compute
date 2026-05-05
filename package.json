@@ -1,6 +1,6 @@
 {
 	"name": "@selvajs/compute",
-	"version": "1.5.2-beta.0",
+	"version": "1.5.2-beta.1",
 	"packageManager": "pnpm@10.18.0",
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",

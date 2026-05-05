@@ -1,12 +1,11 @@
-import { ErrorCodes } from '@/core/errors';
-import { RhinoComputeError } from '@/core/errors/base';
+import { ErrorCodes, RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core/utils/logger';
 import ComputeServerStats from '@/core/server/compute-server-stats';
 import { ComputeConfig, RetryPolicy } from '@/core/types';
 
 import { fetchDefinitionIO, fetchParsedDefinitionIO, solveGrasshopperDefinition } from '..';
 import { GrasshopperComputeConfig, GrasshopperComputeResponse, DataTree } from '../types';
-import { SolveScheduler, SolveSchedulerOptions } from '../scheduler';
+import { SolveScheduler, SolveSchedulerOptions } from '../scheduler/solve-scheduler';
 
 /**
  * Per-call options that override the client's default ComputeConfig values.
@@ -137,10 +136,12 @@ export default class GrasshopperClient {
 			// doubles latency on every solve.
 			const result = await solveGrasshopperDefinition(dataTree, definition, effectiveConfig);
 
-			// Check for errors
-			if (result && typeof result === 'object' && 'message' in result && !('fileData' in result)) {
+			// Compute may return a partial-success response (HTTP 500 with a body
+			// containing both `values` and `errors`/`warnings`). Surface that as a
+			// COMPUTATION_ERROR so callers don't silently consume a broken result.
+			if (result?.errors && result.errors.length > 0) {
 				throw new RhinoComputeError(
-					(result as { message: string }).message || 'Computation failed',
+					result.errors.join('; ') || 'Computation failed',
 					ErrorCodes.COMPUTATION_ERROR,
 					{
 						context: {
@@ -148,7 +149,9 @@ export default class GrasshopperClient {
 								typeof definition === 'string' && definition.length < 200
 									? definition
 									: '...content...',
-							inputs: dataTree
+							inputs: dataTree,
+							errors: result.errors,
+							warnings: result.warnings
 						}
 					}
 				);
@@ -213,13 +216,7 @@ export default class GrasshopperClient {
 		if (this.disposed) return;
 
 		this.disposed = true;
-
-		// If serverStats has a dispose method, call it
-		if ('dispose' in this.serverStats && typeof this.serverStats.dispose === 'function') {
-			await this.serverStats.dispose();
-		}
-
-		// Clear any cached data or connections if needed
+		await this.serverStats.dispose();
 	}
 
 	/**
@@ -270,7 +267,7 @@ export default class GrasshopperClient {
 			apiKey: config.apiKey,
 			authToken: config.authToken,
 			debug: config.debug ?? false,
-			suppressClientSideWarning: config.suppressClientSideWarning
+			suppressBrowserWarning: config.suppressBrowserWarning ?? config.suppressClientSideWarning
 		} as T;
 	}
 }

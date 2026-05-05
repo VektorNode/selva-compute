@@ -7,6 +7,7 @@ Audit findings from a full-repo scan. Grouped by severity, with file links and c
 ## 🔴 Correctness / behavioral bugs
 
 ### 1. `parseColor` accepts impossible hex inputs ✅ FIXED
+
 **File:** [src/features/visualization/threejs/three-helpers.ts:117](src/features/visualization/threejs/three-helpers.ts#L117)
 
 The check was `if (trimmed.startsWith('#') || /^[0-9A-Fa-f]{6}$/.test(trimmed))` — any `#`-prefixed string of any length passed the first branch, so `"#zzz"` reached `new THREE.Color(hex)`.
@@ -16,6 +17,7 @@ The check was `if (trimmed.startsWith('#') || /^[0-9A-Fa-f]{6}$/.test(trimmed))`
 ---
 
 ### 2. `applyCoordinateTransform` is mathematically a no-op for "Z-up → Y-up" ❌ NOT A BUG
+
 **File:** [src/features/visualization/webdisplay/batch-parser.ts](src/features/visualization/webdisplay/batch-parser.ts) (transform now folded into [mesh-compression.ts](src/features/visualization/webdisplay/mesh-compression.ts))
 
 The transform produces `(x, y, z) → (x, z, -y)`. This is **intentional** — downstream camera/scene setup expects this exact orientation, and the behavior is locked in by tests in `batch-parser.test.ts` ("rotates by -90deg around X: (x, y, z) -> (x, z, -y)").
@@ -25,6 +27,7 @@ The transform produces `(x, y, z) → (x, z, -y)`. This is **intentional** — d
 ---
 
 ### 3. `decompressBatchedMeshData` claims "Web Worker" but uses the main thread ✅ FIXED
+
 **Files:** [src/features/visualization/webdisplay/mesh-compression.ts](src/features/visualization/webdisplay/mesh-compression.ts), [src/features/visualization/webdisplay/webdisplay-parser.ts](src/features/visualization/webdisplay/webdisplay-parser.ts)
 
 Was using `requestIdleCallback` / `setTimeout(0)` — both main-thread.
@@ -34,6 +37,7 @@ Was using `requestIdleCallback` / `setTimeout(0)` — both main-thread.
 ---
 
 ### 4. `isBase64` rejects valid base64 with `-_` (URL-safe alphabet) ❌ NOT A BUG (in this codebase)
+
 **File:** [src/core/utils/encoding.ts:37](src/core/utils/encoding.ts#L37)
 
 Only `A-Za-z0-9+/` is accepted. The audit suggested adding `-_` to the regex.
@@ -43,6 +47,7 @@ Only `A-Za-z0-9+/` is accepted. The audit suggested adding `-_` to the regex.
 ---
 
 ### 5. `extractItemValue` returns `null` for excluded types — silently drops keys ✅ FIXED
+
 **File:** [src/features/grasshopper/io/output/response-processors.ts](src/features/grasshopper/io/output/response-processors.ts)
 
 When `isExcludedType()` matched `WebDisplay`, `null` was written into the result and aggregated as if it were data, producing things like `[null, realValue]`.
@@ -52,6 +57,7 @@ When `isExcludedType()` matched `WebDisplay`, `null` was written into the result
 ---
 
 ### 6. `ComputeServerStats.getVersion` chains `response.json()` then `response.text()` ✅ FIXED
+
 **File:** [src/core/server/compute-server-stats.ts:159](src/core/server/compute-server-stats.ts#L159)
 
 `response.json()` consumed the body; the fallback `response.text()` would throw "Body has already been read."
@@ -61,6 +67,7 @@ When `isExcludedType()` matched `WebDisplay`, `null` was written into the result
 ---
 
 ### 7. `solve.ts` strips `pointer` from result — but mutates the response ✅ FIXED
+
 **File:** [src/features/grasshopper/compute/solve.ts:51](src/features/grasshopper/compute/solve.ts#L51)
 
 `delete (result as any).pointer` mutated the object the scheduler may have already cached or returned to a caller.
@@ -71,195 +78,181 @@ When `isExcludedType()` matched `WebDisplay`, `null` was written into the result
 
 ## 🟡 Behavioral / design issues
 
-### 8. `parallel` and `queue` modes share identical logic in the scheduler
-**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts:317-333](src/features/grasshopper/scheduler/solve-scheduler.ts#L317-L333)
+### 8. `parallel` and `queue` modes share identical logic in the scheduler ✅ FIXED
 
-The two `case` branches are byte-for-byte identical. Distinction (`parallel` is unordered, `queue` is FIFO) is only realized via `maxConcurrent` defaulting to 4 vs 1.
+**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts](src/features/grasshopper/scheduler/solve-scheduler.ts)
 
-**Fix:** Either collapse them or genuinely differ them.
+The two `case` branches were byte-for-byte identical. Distinction (`parallel` is unordered, `queue` is FIFO) is realized via `maxConcurrent` defaulting to 4 vs 1, set in the constructor.
 
----
-
-### 9. `latest-wins` aborts in-flight + sets pending: race with `drainNext()`
-**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts:299-313](src/features/grasshopper/scheduler/solve-scheduler.ts#L299-L313)
-
-When you abort an in-flight item and also set `pendingForLatestWins`, then `drainNext()` runs in the in-flight's `finally`. If a brand-new `solve()` arrives between abort and finally, ordering is fragile.
-
-**Fix:** Add a unit test that fires `solve()` calls during the abort window. Verify only the latest survives.
+**Resolution:** Collapsed to a fall-through `case 'queue': case 'parallel':` with a one-line comment noting the constructor sets the defaults.
 
 ---
 
-### 10. Scheduler "Superseded" rejects use `UNKNOWN_ERROR` code
-**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts:420, 428](src/features/grasshopper/scheduler/solve-scheduler.ts#L420)
+### 9. `latest-wins` aborts in-flight + sets pending: race with `drainNext()` ✅ FIXED
 
-The doc on `solve()` (line 229) says check `code: ErrorCodes.UNKNOWN_ERROR` and `message: 'Superseded'`. Comparing on a string message is fragile.
+**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts](src/features/grasshopper/scheduler/solve-scheduler.ts)
 
-**Fix:** Add dedicated `ErrorCodes.SUPERSEDED` and `ErrorCodes.ABORTED` so callers can do `if (err.code === ErrorCodes.SUPERSEDED)`.
+When aborting in-flight + setting `pendingForLatestWins`, `drainNext()` runs in the in-flight's `finally`. If a brand-new `solve()` arrived between abort and finally, ordering was fragile and the executor's `AbortError` could overwrite the original supersede on `_lastError`.
 
----
-
-### 11. `GrasshopperClient.solve` checks `'message' in result && !('fileData' in result)` to detect errors
-**File:** [src/features/grasshopper/client/grasshopper-client.ts:141-155](src/features/grasshopper/client/grasshopper-client.ts#L141)
-
-Brittle structural check — depends on the response not having a property called `fileData`. If Rhino Compute ever adds `fileData` at the top level on a real response, errors stop being caught.
-
-**Fix:** Use the actual error contract from the API (errors/warnings arrays from `handleResponse`).
+**Resolution:** Added a `settled` field on each item (first-settle wins) so a late executor rejection becomes a no-op. Added five new tests: race with 10 back-to-back solves, supersede during abort window, `_lastError` reflects the original supersede cause, plus typed-code checks for `SUPERSEDED` / `ABORTED`. All 21 scheduler tests pass.
 
 ---
 
-### 12. `extractFileData` validation is a runtime type-narrow without a guard
-**File:** [src/features/grasshopper/io/output/response-processors.ts:191-213](src/features/grasshopper/io/output/response-processors.ts#L191)
+### 10. Scheduler "Superseded" rejects use `UNKNOWN_ERROR` code ✅ FIXED
 
-The five-property structural check is fine but spread inline.
+**File:** [src/features/grasshopper/scheduler/solve-scheduler.ts](src/features/grasshopper/scheduler/solve-scheduler.ts), [src/core/errors/error-codes.ts](src/core/errors/error-codes.ts)
 
-**Fix:** Extract as a named `isFileData(parsed)` type guard so callers can re-use it and the check has a single source of truth.
+The doc on `solve()` previously said to check `code: ErrorCodes.UNKNOWN_ERROR` and `message: 'Superseded'`. Comparing on a string message is fragile.
+
+**Resolution:** Added `ErrorCodes.SUPERSEDED` and `ErrorCodes.ABORTED`. Scheduler now rejects with these codes, and the executor's downstream `AbortError` is normalized in a dedicated helper so it doesn't overwrite the original cause. Doc updated and tests added asserting both codes.
 
 ---
 
-### 13. `processInput` always returns `createSafeDefault` on validation errors
-**File:** [src/features/grasshopper/io/input/input-processors.ts:200-203](src/features/grasshopper/io/input/input-processors.ts#L200-L203)
+### 11. `GrasshopperClient.solve` checks `'message' in result && !('fileData' in result)` to detect errors ✅ FIXED
 
-Failed parse for a parameter → silent fallback to a safe default. The user has no signal their input is wrong. The warning is `getLogger().error(...)` which is no-op by default.
+**File:** [src/features/grasshopper/client/grasshopper-client.ts](src/features/grasshopper/client/grasshopper-client.ts)
 
-**Fix:** Surface this through the return type (e.g. `{ ok, value }` or include a `parseErrors[]` on the IO response).
+Brittle structural check — depends on the response not having a property called `fileData`.
+
+**Resolution:** Replaced with a check against the actual API contract: `result.errors` is a `string[]` populated by `handleResponse` for partial-success (HTTP 500 with values + errors). The error message now joins the actual errors and the context includes both `errors` and `warnings` arrays.
+
+---
+
+### 12. `extractFileData` validation is a runtime type-narrow without a guard ✅ FIXED
+
+**File:** [src/features/grasshopper/io/output/response-processors.ts](src/features/grasshopper/io/output/response-processors.ts)
+
+The five-property structural check was inlined in `extractFileData`.
+
+**Resolution:** Extracted `isFileData(value): value is FileData` as a named type guard at the top of the file. `extractFileData` now calls it directly, and the guard narrows `parsed` so the cast is gone.
+
+---
+
+### 13. `processInput` always returns `createSafeDefault` on validation errors ✅ FIXED
+
+**File:** [src/features/grasshopper/io/input/input-processors.ts](src/features/grasshopper/io/input/input-processors.ts), [src/features/grasshopper/io/definition-io.ts](src/features/grasshopper/io/definition-io.ts), [src/features/grasshopper/types/parsed.ts](src/features/grasshopper/types/parsed.ts)
+
+Failed parse → silent fallback to a safe default. User had no signal their input was wrong.
+
+**Resolution:** Added `processInputWithError` and `processInputsWithErrors` that return `{ inputs, parseErrors }`. New `InputParseError` type (with `inputName`, `paramType`, `message`, `code`) is exported. `fetchParsedDefinitionIO` now populates `parseErrors[]` on the `GrasshopperParsedIO` result when any input fell back. Old `processInput`/`processInputs` keep their original signatures for back-compat.
 
 ---
 
 ## 🟢 Defensive bloat / dead code
 
-### 14. `encoding.ts:base64ByteArray` — 130 lines of paranoia
-**File:** [src/core/utils/encoding.ts:90-222](src/core/utils/encoding.ts#L90-L222)
+### 14. `encoding.ts:base64ByteArray` — 130 lines of paranoia ✅ FIXED
 
-Almost every line of the loop has `if (typeof a !== 'number' || a < 0 || a >= encodings.length) throw …`. These are values just produced from `& 63`, `& 252) >> 2`, etc. — guaranteed in range.
+**File:** [src/core/utils/encoding.ts](src/core/utils/encoding.ts)
 
-**Fix:** Collapse to:
-```ts
-export function base64ByteArray(bytes: Uint8Array): string {
-  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
-  let s = '';
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return btoa(s);
-}
-```
-Drop the BOM-stripping unless you can name a `.gh` file in the wild that has a UTF-8 BOM (those are zip archives).
+Almost every line of the loop had `if (typeof a !== 'number' || a < 0 || a >= encodings.length) throw …` for values just produced from `& 63`, `& 252) >> 2`, etc. — guaranteed in range.
+
+**Resolution:** Collapsed to ~15 lines. Uses `Buffer.from(bytes).toString('base64')` in Node and a chunked `btoa(String.fromCharCode(...))` fallback in browsers. The chunking (32K at a time) avoids call-stack overflow on large inputs. BOM-stripping was dropped — `.gh` files are zip archives, not text.
 
 ---
 
-### 15. Two equally-valid validation modules with overlap
-- [src/features/grasshopper/io/input/input-validators.ts](src/features/grasshopper/io/input/input-validators.ts): `validateValueListValues`, `validateValueListDefault`
-- [src/features/grasshopper/io/input/input-parsers.ts:processValueListInput](src/features/grasshopper/io/input/input-parsers.ts#L358) duplicates the same logic
+### 15. Two equally-valid validation modules with overlap ✅ FIXED
 
-`input-validators.ts` exports `validateInputStructure`, `validateRequiredProperties`, `validateNumericConstraints`, `validateParameterType`, `extractNumericPrecision`, `normalizeGroupName` — none called outside their own file.
+**File:** [src/features/grasshopper/io/input/input-validators.ts](src/features/grasshopper/io/input/input-validators.ts)
 
-**Fix:** Confirm with grep, then delete.
-
-```bash
-grep -rn "validateNumericConstraints\|normalizeGroupName\|validateRequiredProperties" src/
-```
+**Resolution:** Confirmed via grep that only `preProcessInputDefault` was used externally. Deleted `validateValueListValues`, `validateValueListDefault`, `validateInputStructure`, `validateRequiredProperties`, `validateNumericConstraints`, `validateParameterType`, `extractNumericPrecision`, `normalizeGroupName`, and the `ValidationContext` type. The file is now ~80 lines (was ~290) and only contains `preProcessInputDefault`.
 
 ---
 
-### 16. `RhinoComputeError` static helpers are unused in public surface
-**File:** [src/core/errors/base.ts:42-97](src/core/errors/base.ts#L42-L97)
+### 16. `RhinoComputeError` static helpers are unused in public surface ✅ FIXED
 
-`validation`, `missingValues`, `invalidDefault`, `unknownParamType`, `invalidStructure` — most are called from internal validators only.
+**File:** [src/core/errors/base.ts](src/core/errors/base.ts)
 
-**Fix:** Either move them into a private module (they pollute the public error API) or use them consistently. Currently most call sites construct `new RhinoComputeError(...)` directly.
+`validation`, `invalidDefault`, `invalidStructure` were only called from the now-deleted validators in #15.
 
----
-
-### 17. `RhinoComputeError` always copies `originalError` to `cause` — guard is impossible
-**File:** [src/core/errors/base.ts:27-32](src/core/errors/base.ts#L27)
-
-`'cause' in Error.prototype` — Node 16.9+, TypeScript 4.6+. The `engines` field is `>=20.0.0`.
-
-**Fix:** Just write `cause: options?.originalError` directly.
+**Resolution:** Removed `validation`, `invalidDefault`, `invalidStructure`. Kept `missingValues` (used in `input-parsers.ts:processValueListInput`) and `unknownParamType` (used in `input-processors.ts`).
 
 ---
 
-### 18. `setLogger` accepts `Console | null | Logger` then misroutes
-**File:** [src/core/utils/logger.ts:87-95](src/core/utils/logger.ts#L87)
+### 17. `RhinoComputeError` always copies `originalError` to `cause` — guard is impossible ✅ FIXED
 
-If you pass a `Console`, it has the four methods — falls into the Logger branch. The else branch (`new ConsoleLogger()`) is unreachable because every non-null arg already has the four methods.
+**File:** [src/core/errors/base.ts](src/core/errors/base.ts)
 
-**Fix:** Remove the dual-type dance.
-
----
-
-### 19. `toCamelCase` has two near-identical code paths
-**File:** [src/core/utils/camel-case.ts:7-23](src/core/utils/camel-case.ts#L7)
-
-The `preserveSpaces` toggle could be a single regex parameterized by the separator class.
-
-**Fix:** Minor — collapse into one regex.
+**Resolution:** Removed the `'cause' in Error.prototype` guard. Since `engines` requires Node 20+ and the project's `lib` is still ES2020 (so the typings don't accept the second arg to `super`), the constructor now sets `cause` directly on `this` after `super(message)` rather than going through `Object.defineProperty`.
 
 ---
 
-### 20. `data-tree.ts` `replaceTreeValue` and `getTreeValue` have full duplicate paths for `TreeBuilder[]` vs `DataTree[]`
-**File:** [src/features/grasshopper/data-tree/data-tree.ts:286-466](src/features/grasshopper/data-tree/data-tree.ts#L286-L466)
+### 18. `setLogger` accepts `Console | null | Logger` then misroutes ✅ FIXED
 
-~180 lines that could be a small adapter: convert any input to `TreeBuilder[]` once at the entry, do the operation, convert back if needed. The `instanceof TreeBuilder` check on `trees[0]` only is unsafe if the array is mixed.
+**File:** [src/core/utils/logger.ts](src/core/utils/logger.ts)
 
-**Fix:** Adapter pattern + audit type guard.
+The dual structural-narrowing branch was unreachable — every non-null arg already had the four methods, so the `else { new ConsoleLogger() }` branch was dead.
 
----
-
-### 21. `compute-fetch.ts` 429 retry: doesn't drain on retryable status when attempts are exhausted
-**File:** [src/core/compute-fetch/compute-fetch.ts:373-392](src/core/compute-fetch/compute-fetch.ts#L373-L392)
-
-Body is drained only inside the `if (isRetryableStatus && attempt < totalAttempts - 1)` branch. When the last attempt returns 429, the body falls through to `handleResponse` (which reads it again — fine), but the connection-reuse comment is misleading.
-
-**Fix:** Drain unconditionally on retryable status.
+**Resolution:** Collapsed to a single ternary: `null` → `NoOpLogger`, otherwise cast to `Logger`. `Console` already satisfies `Logger` structurally.
 
 ---
 
-### 22. `composeSignal` manual fallback may leak listeners on caller-supplied signals
-**File:** [src/core/compute-fetch/compute-fetch.ts:215-230](src/core/compute-fetch/compute-fetch.ts#L215-L230)
+### 19. `toCamelCase` has two near-identical code paths ✅ FIXED
 
-The fallback path creates `ctrl` and listens on each input signal. The cleanup function does cover this (called via `finally` in `attemptFetch`, ✓), but listeners on long-lived caller signals (component lifecycle) need explicit audit.
+**File:** [src/core/utils/camel-case.ts](src/core/utils/camel-case.ts)
 
-**Fix:** Audit cleanup paths; add a test for caller signal listener count after many requests.
+The `preserveSpaces` toggle had two duplicate replace pipelines.
+
+**Resolution:** Collapsed to one expression with the separator class chosen by the toggle (`/[\s-_]+/` vs `/[-_]+/`). 9 camelCase tests still pass.
+
+---
+
+### 20. `data-tree.ts` `replaceTreeValue` and `getTreeValue` have full duplicate paths for `TreeBuilder[]` vs `DataTree[]` ✅ FIXED
+
+**File:** [src/features/grasshopper/data-tree/data-tree.ts](src/features/grasshopper/data-tree/data-tree.ts)
+
+**Resolution:** Both methods now branch only on `trees[0] instanceof TreeBuilder` and dispatch to small private helpers — `buildFromValue` (shared between both array shapes), `readFromBuilders` (uses `flatten()` across all branches), and `readFromDataTrees` (first-branch read, current API semantics). The duplicate value-shape and unwrap logic is now in one place each. The empty-array edge case (an empty `TreeBuilder[]` lands in the DataTree branch) is preserved and pinned by the existing characterization test. The `instanceof` check on `trees[0]` is acknowledged as the heuristic it always was — mixed arrays are not supported and there's no realistic call path that produces them.
+
+---
+
+### 21. `compute-fetch.ts` 429 retry: doesn't drain on retryable status when attempts are exhausted ❌ NOT A BUG
+
+**File:** [src/core/compute-fetch/compute-fetch.ts](src/core/compute-fetch/compute-fetch.ts)
+
+The original concern was that the last 429 attempt skips the drain. But on the final attempt, we _want_ to fall through to `handleResponse` — it reads the body itself with `await response.text()` to surface error context. Draining "unconditionally on retryable status" would leave `handleResponse` with an empty body and worse error messages.
+
+**Resolution:** Comment clarified to spell out the intent: drain only when retrying, since the final attempt's body is consumed by `handleResponse` for error reporting. No code change.
+
+---
+
+### 22. `composeSignal` manual fallback may leak listeners on caller-supplied signals ✅ FIXED
+
+**File:** [src/core/compute-fetch/compute-fetch.ts](src/core/compute-fetch/compute-fetch.ts), [src/core/compute-fetch/**tests**/compose-signal.test.ts](src/core/compute-fetch/__tests__/compose-signal.test.ts)
+
+**Resolution:** Audit confirmed the cleanup is sound — `removeEventListener` runs over every signal regardless of whether `addEventListener` succeeded for it (so the early `break` on an already-aborted signal can't leak), and `{ once: true }` covers the fire-and-forget case. Exported `composeSignal` for tests and added a leak test that forces the manual-fallback path (by stubbing `AbortSignal.any` / `AbortSignal.timeout`), runs 50 compose/cleanup cycles, and asserts `addEventListener('abort')` and `removeEventListener('abort')` call counts match. Also covers the timeout-fallback timer cleanup (`getTimerCount` round-trip) and the already-aborted input case.
 
 ---
 
 ## 🔵 API / DX nits
 
-### 23. Public API exposes three ways to read values
-**File:** [src/features/grasshopper/client/grasshopper-response-processor.ts:73-91](src/features/grasshopper/client/grasshopper-response-processor.ts#L73)
+### 23. Public API exposes three ways to read values ✅ FIXED
 
-`getValueByParamName`, `getValueByParamId`, plus `getValues(byId)`. Three ways to do the same thing.
+**File:** [src/features/grasshopper/client/grasshopper-response-processor.ts](src/features/grasshopper/client/grasshopper-response-processor.ts)
 
-**Fix:** Consider one method `getValue(selector: { byName } | { byId })` and one `getValues(options)`.
-
----
-
-### 24. `GrasshopperClient.dispose()` checks `'dispose' in this.serverStats` — type-level redundant
-**File:** [src/features/grasshopper/client/grasshopper-client.ts:218](src/features/grasshopper/client/grasshopper-client.ts#L218)
-
-`ComputeServerStats` is constructed in the constructor, has a known dispose method. The `if ('dispose' in ...)` narrowing is a leftover.
-
-**Fix:** Remove the guard.
+**Resolution:** Added `getValue(selector: { byName } | { byId }, options?)` as the canonical single-value reader — same selector shape as the underlying `getValue` helper. `getValueByParamName` and `getValueByParamId` are kept as `@deprecated` thin wrappers so external consumers don't break on upgrade; remove them in a future major.
 
 ---
 
-### 25. `ComputeConfig.suppressClientSideWarning` plumbed everywhere but only consulted in one place
-**Files:** [src/core/compute-fetch/compute-fetch.ts:163-167](src/core/compute-fetch/compute-fetch.ts#L163), [src/features/grasshopper/compute/solve.ts:43](src/features/grasshopper/compute/solve.ts#L43)
+### 24. `GrasshopperClient.dispose()` checks `'dispose' in this.serverStats` — type-level redundant ✅ FIXED
 
-The flag controls the `warnIfClientSide` check.
+**File:** [src/features/grasshopper/client/grasshopper-client.ts](src/features/grasshopper/client/grasshopper-client.ts)
 
-**Fix:** Rename to match intent (`suppressBrowserWarning`) or scope it to the warning module only.
+`ComputeServerStats` is constructed in the constructor and has a known `dispose()` method. The `if ('dispose' in ...)` narrowing was a leftover.
+
+**Resolution:** Replaced the guard with a direct `await this.serverStats.dispose()` call.
+
+---
+
+### 25. `ComputeConfig.suppressClientSideWarning` plumbed everywhere but only consulted in one place ✅ FIXED
+
+**Files:** [src/core/types.ts](src/core/types.ts), [src/features/grasshopper/compute/solve.ts](src/features/grasshopper/compute/solve.ts), [src/features/grasshopper/io/definition-io.ts](src/features/grasshopper/io/definition-io.ts), [src/features/grasshopper/client/grasshopper-client.ts](src/features/grasshopper/client/grasshopper-client.ts)
+
+**Resolution:** Added `suppressBrowserWarning` to `ComputeConfig`. The old `suppressClientSideWarning` is kept as `@deprecated` for back-compat. All three call sites (`solve`, `fetchParsedDefinitionIO`, `normalizeComputeConfig`) read `suppressBrowserWarning ?? suppressClientSideWarning`, so callers using either name keep working. README updated to advertise the new name only.
 
 ---
 
 ## Recommended order
 
-Behavioral bugs (#1–#7) are resolved — fixed or validated as not-bugs. Remaining priorities:
-
-1. **#10** Typed `SUPERSEDED`/`ABORTED` codes — affects every scheduler caller's error handling
-2. **#13** Surface `processInput` validation errors instead of silent fallback
-3. **#11** Replace brittle `'message' in result && !('fileData' in result)` error detection
-4. **#9** Race-test for `latest-wins` abort + pending interaction
-5. **#14, #15, #16** Mechanical cleanup — ~300 lines deletable
+All code-level items resolved: #1–#25. The remaining work is structural (S-series below).
 
 ---
 
@@ -278,9 +271,10 @@ The current shape is already pretty good — `core` / `features` split, feature 
 
 ## 🔴 Issues worth fixing
 
-### S1. Re-export pyramid: 4 layers for the same symbols
+### S1. Re-export pyramid: 4 layers for the same symbols ✅ FIXED
 
 Trace `GrasshopperClient`:
+
 - [src/features/grasshopper/client/grasshopper-client.ts](src/features/grasshopper/client/grasshopper-client.ts) — defined
 - [src/features/grasshopper/client/index.ts](src/features/grasshopper/client/index.ts) — re-export
 - [src/features/grasshopper/index.ts](src/features/grasshopper/index.ts) — re-export
@@ -290,6 +284,7 @@ Trace `GrasshopperClient`:
 That's **5 files touching one symbol**. Every new export means edits in 4 of them. The barrel files also break tree-shaking when consumers do `import { x } from '@selvajs/compute'` if any module has hidden side effects.
 
 **Fix:** Collapse to **two** layers:
+
 - Feature roots that re-export their public surface (`features/grasshopper/index.ts`)
 - Package entry points (`src/index.ts`, `src/grasshopper.ts`, `src/visualization.ts`) that re-export from feature roots
 
@@ -299,11 +294,12 @@ That's **~10 files deletable** with no API change.
 
 ---
 
-### S2. `src/grasshopper.ts` and `src/threejs.ts` sit awkwardly at root
+### S2. `src/grasshopper.ts` and `src/threejs.ts` sit awkwardly at root ✅ FIXED
 
 These are package entry points (referenced from `package.json` exports) but live next to `src/index.ts` with no folder convention. `src/threejs.ts` re-exports from `features/visualization` — name mismatch (`threejs` vs `visualization`).
 
 **Fix:** Either:
+
 - Rename `src/threejs.ts` → `src/visualization.ts` (matches `package.json:"./visualization"`), or
 - Move all entry points into `src/entries/` and reference them from `tsup.config` / `package.json`
 
@@ -311,9 +307,9 @@ Pick one. Current state has `package.json` exporting `./visualization` while the
 
 ---
 
-### S3. `grasshopper/types/` is split into 4 files for ~30 type aliases
+### S3. `grasshopper/types/` is split into 4 files for ~30 type aliases ✅ FIXED
 
-[src/features/grasshopper/types/](src/features/grasshopper/types/) has `parameters.ts`, `parsed.ts`, `schemas.ts`, `trees.ts` — plus `index.ts` re-exporting all. The header on `index.ts` says *"Provides backward compatibility with the original monolithic types.ts"* — mid-migration debris.
+[src/features/grasshopper/types/](src/features/grasshopper/types/) has `parameters.ts`, `parsed.ts`, `schemas.ts`, `trees.ts` — plus `index.ts` re-exporting all. The header on `index.ts` says _"Provides backward compatibility with the original monolithic types.ts"_ — mid-migration debris.
 
 **Fix:** Either complete the split (move types into the modules they belong to: `DataTree` types into `data-tree/`, `InputParam` types into `io/input/`) or collapse back to one file. Current half-state is worse than either.
 
@@ -331,20 +327,22 @@ Same applies to `data-tree/` — though that one is more justifiable because use
 
 ---
 
-### S5. `errors/` is split into `base.ts` + `error-codes.ts` + `index.ts` for ~120 lines
+### S5. `errors/` is split into `base.ts` + `error-codes.ts` + `index.ts` for ~120 lines ✅ FIXED
 
-[src/core/errors/](src/core/errors/) — three files for one error class and one constant object.
+**File:** [src/core/errors.ts](src/core/errors.ts)
 
-**Fix:** Single file `src/core/errors.ts`. Folders should hold multiple files.
+The folder held three files for one error class and one constant object.
+
+**Resolution:** Collapsed to a single `src/core/errors.ts` containing both `RhinoComputeError` and `ErrorCodes`. All call sites already imported via `@/core/errors`, so external imports are unchanged. Two internal deep-imports in `encoding.ts` and `core/index.ts` were redirected to the new file.
 
 ---
 
 ### S6. `__tests__/` placement is inconsistent
 
-- [src/core/utils/__tests__/](src/core/utils/__tests__/) — has tests
+- [src/core/utils/**tests**/](src/core/utils/__tests__/) — has tests
 - [src/core/server/](src/core/server/) — no tests
 - [src/core/compute-fetch/](src/core/compute-fetch/) — no tests
-- [src/features/grasshopper/io/input/__tests__/](src/features/grasshopper/io/input/__tests__/) — has tests
+- [src/features/grasshopper/io/input/**tests**/](src/features/grasshopper/io/input/__tests__/) — has tests
 - [src/features/grasshopper/io/output/](src/features/grasshopper/io/output/) — no tests
 
 More a coverage problem than structure, but the convention is set: when tests get added, they go in a `__tests__/` sibling.
@@ -372,13 +370,13 @@ Non-overlapping, but reader has to guess where to look. Types for `threejs/` set
 
 ---
 
-### S9. Path aliases inconsistent: `@/core/errors` vs `@/core/errors/base`
+### S9. Path aliases inconsistent: `@/core/errors` vs `@/core/errors/base` ✅ FIXED
 
-Both styles in use:
-- [src/features/grasshopper/client/grasshopper-client.ts:1-2](src/features/grasshopper/client/grasshopper-client.ts#L1-L2) imports both `@/core/errors` and `@/core/errors/base` in the same file
-- [src/features/grasshopper/io/input/input-validators.ts:1-2](src/features/grasshopper/io/input/input-validators.ts#L1-L2) uses `@/core/errors` and `@/core` separately
+The mixed-style imports were:
 
-**Fix:** Pick one entry style per package and lint for it. If `@/core` works, never reach into `@/core/errors/base` — that's coupling to internal layout.
+- `grasshopper-client.ts` imported both `@/core/errors` and `@/core/errors/base`
+
+**Resolution:** Consolidated `grasshopper-client.ts` to a single `import { ErrorCodes, RhinoComputeError } from '@/core/errors'`. Combined with **S5** above (the folder is now a single file), there's no longer a way to deep-import past the public surface — the inconsistency can't recur.
 
 ---
 
@@ -446,8 +444,4 @@ src/
 
 ## Recommended order (structure)
 
-1. **S1** Delete sub-feature barrels — biggest noise reduction, no risk
-2. **S2** Rename `src/threejs.ts` → `src/visualization.ts` — matches `package.json`
-3. **S5** Collapse `errors/` to `errors.ts` — three files become one, trivial
-4. **S3** Resolve the `grasshopper/types/` split — pick colocated or single-file, finish the migration
-5. **S9** Lint for consistent path aliases
+Resolved: S1, S2, S3, S5, S9. All structural items complete.

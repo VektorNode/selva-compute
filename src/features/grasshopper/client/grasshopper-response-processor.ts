@@ -1,4 +1,4 @@
-import { downloadFileData } from '@/features/grasshopper/file-handling';
+import { downloadFileData } from '@/features/grasshopper/file-handling/handle-files';
 import { FileBaseInfo, FileData } from '@/features/grasshopper/file-handling/types';
 import type { MeshExtractionOptions } from '@/features/visualization/webdisplay/types';
 import { RhinoComputeError, ErrorCodes } from '@/core/errors';
@@ -59,32 +59,36 @@ export default class GrasshopperResponseProcessor {
 	}
 
 	/**
-	 * Retrieve a specific value using the parameter name.
+	 * Retrieve a specific value by parameter name or ID.
 	 *
-	 * @param paramName - Human-readable parameter name from the Grasshopper definition.
+	 * @param selector - `{ byName }` for the human-readable name, `{ byId }` for the parameter GUID.
 	 * @param options - Parsing configuration (e.g. disable parsing or enable Rhino).
 	 * @returns Single parsed value, array of values, or undefined if the parameter is absent.
 	 *
 	 * @example
 	 * ```ts
-	 * const schema = processor.getValueByParamName('Schema');
+	 * const schema = processor.getValue({ byName: 'Schema' });
+	 * const output = processor.getValue({ byId: 'a4be1c1e-23f9-4c27-b942-7f3bb2c45c6f' });
 	 * ```
+	 *
+	 * **Note:** `byId` only works with the custom VektorNode rhino.compute branch.
+	 */
+	public getValue(
+		selector: { byName: string } | { byId: string },
+		options?: GetValuesOptions
+	): any {
+		return getValue(this.response, selector, options);
+	}
+
+	/**
+	 * @deprecated Use `getValue({ byName })` instead.
 	 */
 	public getValueByParamName(paramName: string, options?: GetValuesOptions): any {
 		return getValue(this.response, { byName: paramName }, options);
 	}
 
 	/**
-	 * Retrieve a specific value using the parameter ID.
-	 *
-	 * @param paramId - Parameter GUID from the Grasshopper definition.
-	 * @param options - Parsing configuration (e.g. disable parsing or enable Rhino).
-	 * @returns Parsed value, array of values, or undefined if not present.
-	 *
-	 * @example
-	 * ```ts
-	 * const output = processor.getValueByParamId('a4be1c1e-23f9-4c27-b942-7f3bb2c45c6f');
-	 * ```
+	 * @deprecated Use `getValue({ byId })` instead.
 	 */
 	public getValueByParamId(paramId: string, options?: GetValuesOptions): any {
 		return getValue(this.response, { byId: paramId }, options);

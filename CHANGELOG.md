@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 1.5.2-beta.1
+
+### Patch Changes
+
+- Structural cleanup: collapse sub-feature barrel files, rename `threejs.ts` entry point to `visualization.ts`, and merge `grasshopper/types/` split into a single file. No public API changes.
+
 ## 1.5.2-beta.0
 
 ### Patch Changes

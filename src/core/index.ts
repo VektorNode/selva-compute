@@ -42,19 +42,18 @@
 
 export { fetchRhinoCompute } from './compute-fetch/compute-fetch';
 
-// =========================
-// Server Stats
-// =========================
+// ============================================================================
+// SERVER STATS
+// ============================================================================
 
-export { ComputeServerStats } from './server';
+export { default as ComputeServerStats } from './server/compute-server-stats';
 
 // ============================================================================
 // ERROR HANDLING
 // ============================================================================
 
-export { RhinoComputeError } from './errors/base';
-export { ErrorCodes } from './errors/error-codes';
-export type { ErrorCode } from './errors/error-codes';
+export { RhinoComputeError, ErrorCodes } from './errors';
+export type { ErrorCode } from './errors';
 
 // ============================================================================
 // UTILITIES

@@ -1,7 +1,5 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(pnpm vitest *)"
-    ]
-  }
+	"permissions": {
+		"allow": ["Bash(pnpm vitest *)"]
+	}
 }

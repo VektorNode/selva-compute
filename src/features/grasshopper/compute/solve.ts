@@ -40,7 +40,10 @@ export async function solveGrasshopperDefinition(
 	config: GrasshopperComputeConfig
 ): Promise<GrasshopperComputeResponse> {
 	if (config.debug) {
-		warnIfClientSide('solveGrasshopperDefinition', config.suppressClientSideWarning);
+		warnIfClientSide(
+			'solveGrasshopperDefinition',
+			config.suppressBrowserWarning ?? config.suppressClientSideWarning
+		);
 	}
 
 	const args = prepareGrasshopperArgs(definition, dataTree);

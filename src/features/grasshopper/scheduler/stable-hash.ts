@@ -1,13 +1,11 @@
 /**
- * Stable hashing helpers for solve dedupe / cache keys.
- *
+ * Stable hashing for solve deduplication and caching.
  * @internal
  */
 
 /**
- * Deterministic JSON stringify — keys are sorted at every object level so
- * `{a:1,b:2}` and `{b:2,a:1}` produce the same string. Handles circular
- * references safely (replaces with a sentinel) and non-finite numbers.
+ * Deterministic stringify with sorted keys. {a:1,b:2} and {b:2,a:1} produce
+ * the same string. Safely handles circular references and non-finite numbers.
  */
 export function stableStringify(value: unknown): string {
 	const seen = new WeakSet<object>();
@@ -20,8 +18,9 @@ export function stableStringify(value: unknown): string {
 		if (typeof v === 'string' || typeof v === 'boolean') return JSON.stringify(v);
 		if (typeof v === 'bigint') return JSON.stringify(v.toString());
 		if (v instanceof Uint8Array) {
-			// Hash bytes by length + a sample to avoid stringifying multi-MB buffers fully
-			const sample = v.length > 64 ? Array.from(v.slice(0, 32)).concat(Array.from(v.slice(-32))) : Array.from(v);
+			// Use length + sample instead of full buffer to avoid stringifying large data
+			const sample =
+				v.length > 64 ? Array.from(v.slice(0, 32)).concat(Array.from(v.slice(-32))) : Array.from(v);
 			return JSON.stringify({ __u8: true, len: v.length, sample });
 		}
 		if (Array.isArray(v)) {
@@ -42,8 +41,7 @@ export function stableStringify(value: unknown): string {
 }
 
 /**
- * 32-bit FNV-1a hash. Fast, no deps, good enough for dedupe/cache keys.
- * Returns an unsigned hex string.
+ * 32-bit FNV-1a— fast, no dependencies. Returns unsigned hex string.
  */
 export function fnv1a(input: string): string {
 	let hash = 0x811c9dc5;
@@ -55,9 +53,8 @@ export function fnv1a(input: string): string {
 }
 
 /**
- * Hash a (definition, dataTree) pair into a short stable key.
- * For Uint8Array definitions we use length + endpoint bytes rather than the
- * full content to keep hashing cheap.
+ * Hash definition and data tree into a stable cache key.
+ * For Uint8Array, uses length + samples to keep hashing fast.
  */
 export function hashSolveInput(definition: string | Uint8Array, dataTree: unknown): string {
 	const defKey =

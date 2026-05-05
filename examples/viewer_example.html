@@ -1,328 +1,366 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Three.js Viewer Example</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Three.js Viewer Example</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
 
-    body {
-      font-family: system-ui, sans-serif;
-      background: #1a1a1a;
-      color: #eee;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
+			body {
+				font-family: system-ui, sans-serif;
+				background: #1a1a1a;
+				color: #eee;
+				display: flex;
+				height: 100vh;
+				overflow: hidden;
+			}
 
-    #sidebar {
-      width: 240px;
-      flex-shrink: 0;
-      background: #242424;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      overflow-y: auto;
-      border-right: 1px solid #333;
-    }
+			#sidebar {
+				width: 240px;
+				flex-shrink: 0;
+				background: #242424;
+				padding: 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+				overflow-y: auto;
+				border-right: 1px solid #333;
+			}
 
-    #resize-handle {
-      width: 5px;
-      flex-shrink: 0;
-      background: #333;
-      cursor: col-resize;
-      transition: background 0.15s;
-    }
-    #resize-handle:hover, #resize-handle.dragging { background: #555; }
+			#resize-handle {
+				width: 5px;
+				flex-shrink: 0;
+				background: #333;
+				cursor: col-resize;
+				transition: background 0.15s;
+			}
+			#resize-handle:hover,
+			#resize-handle.dragging {
+				background: #555;
+			}
 
-    #sidebar h2 {
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #888;
-      margin-bottom: 4px;
-    }
+			#sidebar h2 {
+				font-size: 13px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+				color: #888;
+				margin-bottom: 4px;
+			}
 
-    .section { display: flex; flex-direction: column; gap: 8px; }
-    .section-title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #666;
-      border-bottom: 1px solid #333;
-      padding-bottom: 4px;
-    }
+			.section {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.section-title {
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+				color: #666;
+				border-bottom: 1px solid #333;
+				padding-bottom: 4px;
+			}
 
-    button {
-      background: #333;
-      border: 1px solid #444;
-      color: #eee;
-      padding: 7px 10px;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 12px;
-      text-align: left;
-      transition: background 0.15s;
-    }
-    button:hover { background: #3d3d3d; }
-    button.active { background: #2a5a2a; border-color: #4a8a4a; }
+			button {
+				background: #333;
+				border: 1px solid #444;
+				color: #eee;
+				padding: 7px 10px;
+				border-radius: 5px;
+				cursor: pointer;
+				font-size: 12px;
+				text-align: left;
+				transition: background 0.15s;
+			}
+			button:hover {
+				background: #3d3d3d;
+			}
+			button.active {
+				background: #2a5a2a;
+				border-color: #4a8a4a;
+			}
 
-    label { font-size: 12px; color: #aaa; display: flex; flex-direction: column; gap: 4px; }
-    input[type=range] { width: 100%; }
-    input[type=color] { width: 100%; height: 28px; border: none; border-radius: 4px; cursor: pointer; }
+			label {
+				font-size: 12px;
+				color: #aaa;
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+			}
+			input[type='range'] {
+				width: 100%;
+			}
+			input[type='color'] {
+				width: 100%;
+				height: 28px;
+				border: none;
+				border-radius: 4px;
+				cursor: pointer;
+			}
 
-    #info-panel {
-      background: #1e1e1e;
-      border: 1px solid #333;
-      border-radius: 5px;
-      padding: 10px;
-      font-size: 11px;
-      color: #aaa;
-      min-height: 60px;
-      line-height: 1.6;
-    }
+			#info-panel {
+				background: #1e1e1e;
+				border: 1px solid #333;
+				border-radius: 5px;
+				padding: 10px;
+				font-size: 11px;
+				color: #aaa;
+				min-height: 60px;
+				line-height: 1.6;
+			}
 
-    #canvas-container {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-    }
+			#canvas-container {
+				flex: 1;
+				position: relative;
+				overflow: hidden;
+			}
 
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
+			canvas {
+				display: block;
+				width: 100%;
+				height: 100%;
+			}
 
-    #hud {
-      position: absolute;
-      bottom: 12px;
-      left: 12px;
-      font-size: 11px;
-      color: rgba(255,255,255,0.4);
-      pointer-events: none;
-      line-height: 1.8;
-    }
-  </style>
-</head>
-<body>
+			#hud {
+				position: absolute;
+				bottom: 12px;
+				left: 12px;
+				font-size: 11px;
+				color: rgba(255, 255, 255, 0.4);
+				pointer-events: none;
+				line-height: 1.8;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="sidebar">
+			<h2>Viewer Example</h2>
 
-<div id="sidebar">
-  <h2>Viewer Example</h2>
+			<div class="section">
+				<div class="section-title">Add Geometry</div>
+				<button onclick="addBox()">Add Box</button>
+				<button onclick="addSphere()">Add Sphere</button>
+				<button onclick="addTorus()">Add Torus</button>
+				<button onclick="addRandomMeshes()">Add Random Scene</button>
+				<button onclick="clearMeshes()">Clear Scene</button>
+			</div>
 
-  <div class="section">
-    <div class="section-title">Add Geometry</div>
-    <button onclick="addBox()">Add Box</button>
-    <button onclick="addSphere()">Add Sphere</button>
-    <button onclick="addTorus()">Add Torus</button>
-    <button onclick="addRandomMeshes()">Add Random Scene</button>
-    <button onclick="clearMeshes()">Clear Scene</button>
-  </div>
+			<div class="section">
+				<div class="section-title">Camera</div>
+				<button onclick="fitToView()">Fit to View (F)</button>
+				<button id="btn-autorotate" onclick="toggleAutoRotate()">Auto Rotate: Off</button>
+			</div>
 
-  <div class="section">
-    <div class="section-title">Camera</div>
-    <button onclick="fitToView()">Fit to View (F)</button>
-    <button id="btn-autorotate" onclick="toggleAutoRotate()">Auto Rotate: Off</button>
-  </div>
+			<div class="section">
+				<div class="section-title">Floor</div>
+				<button id="btn-floor" onclick="toggleFloor()">Floor: Off</button>
+			</div>
 
-  <div class="section">
-    <div class="section-title">Floor</div>
-    <button id="btn-floor" onclick="toggleFloor()">Floor: Off</button>
-  </div>
+			<div class="section">
+				<div class="section-title">Selection Color</div>
+				<label>
+					Pick color
+					<input
+						type="color"
+						id="sel-color"
+						value="#ff0000"
+						oninput="updateSelectionColor(this.value)"
+					/>
+				</label>
+			</div>
 
-  <div class="section">
-    <div class="section-title">Selection Color</div>
-    <label>
-      Pick color
-      <input type="color" id="sel-color" value="#ff0000" oninput="updateSelectionColor(this.value)" />
-    </label>
-  </div>
+			<div class="section">
+				<div class="section-title">Selected Object</div>
+				<div id="info-panel">Click a mesh to select it.<br />Double-click to zoom in.</div>
+			</div>
+		</div>
 
-  <div class="section">
-    <div class="section-title">Selected Object</div>
-    <div id="info-panel">Click a mesh to select it.<br>Double-click to zoom in.</div>
-  </div>
-</div>
+		<div id="resize-handle"></div>
 
-<div id="resize-handle"></div>
+		<div id="canvas-container">
+			<canvas id="viewer-canvas"></canvas>
+			<div id="hud">
+				F / Space — fit to view &nbsp;|&nbsp; Esc — deselect &nbsp;|&nbsp; Double-click — zoom to
+				mesh
+			</div>
+		</div>
 
-<div id="canvas-container">
-  <canvas id="viewer-canvas"></canvas>
-  <div id="hud">
-    F / Space — fit to view &nbsp;|&nbsp; Esc — deselect &nbsp;|&nbsp; Double-click — zoom to mesh
-  </div>
-</div>
+		<script type="module">
+			import * as THREE from 'three';
+			import { initThree } from '../src/features/visualization/threejs/three-initializer.ts';
 
-<script type="module">
-import * as THREE from 'three';
-import { initThree } from '../src/features/visualization/threejs/three-initializer.ts';
+			// ─── App ─────────────────────────────────────────────────────────────────────
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+			const canvas = document.getElementById('viewer-canvas');
+			const infoPanel = document.getElementById('info-panel');
+			let floorVisible = false;
+			let autoRotate = false;
 
-const canvas = document.getElementById('viewer-canvas');
-const infoPanel = document.getElementById('info-panel');
-let floorVisible = false;
-let autoRotate = false;
+			let selectionColorHex = '#ff0000';
 
-let selectionColorHex = '#ff0000';
-
-const viewer = initThree(canvas, {
-  floor: { enabled: true },
-  events: {
-    selectionColor: selectionColorHex,
-    onObjectSelected: (obj) => {
-      infoPanel.innerHTML = `
+			const viewer = initThree(canvas, {
+				floor: { enabled: true },
+				events: {
+					selectionColor: selectionColorHex,
+					onObjectSelected: (obj) => {
+						infoPanel.innerHTML = `
         <b>${obj.name || 'Mesh'}</b><br>
         Type: ${obj.type}<br>
-        Position: ${obj.position.toArray().map(v => v.toFixed(2)).join(', ')}<br>
+        Position: ${obj.position
+					.toArray()
+					.map((v) => v.toFixed(2))
+					.join(', ')}<br>
         ${Object.keys(obj.userData).length ? 'UserData: ' + JSON.stringify(obj.userData) : ''}
       `;
-    },
-    onBackgroundClicked: () => {
-      infoPanel.textContent = 'Click a mesh to select it.\nDouble-click to zoom in.';
-    },
-    onMeshDoubleClicked: (obj) => {
-      infoPanel.innerHTML = `<b>Zoomed into:</b> ${obj.name || 'Mesh'}`;
-    }
-  }
-});
+					},
+					onBackgroundClicked: () => {
+						infoPanel.textContent = 'Click a mesh to select it.\nDouble-click to zoom in.';
+					},
+					onMeshDoubleClicked: (obj) => {
+						infoPanel.innerHTML = `<b>Zoomed into:</b> ${obj.name || 'Mesh'}`;
+					}
+				}
+			});
 
-// Find the floor mesh that initThree added to the scene
-const floor = viewer.scene.getObjectByName('floor');
-if (floor) floor.visible = false;
+			// Find the floor mesh that initThree added to the scene
+			const floor = viewer.scene.getObjectByName('floor');
+			if (floor) floor.visible = false;
 
-// ─── Geometry helpers ─────────────────────────────────────────────────────────
+			// ─── Geometry helpers ─────────────────────────────────────────────────────────
 
-let meshCount = 0;
+			let meshCount = 0;
 
-function makeMaterial(color) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1 });
-}
+			function makeMaterial(color) {
+				return new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.1 });
+			}
 
-function addMesh(geo, name, color, position) {
-  const mesh = new THREE.Mesh(geo, makeMaterial(color));
-  mesh.name = name;
-  mesh.position.copy(position);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  viewer.scene.add(mesh);
-  meshCount++;
-}
+			function addMesh(geo, name, color, position) {
+				const mesh = new THREE.Mesh(geo, makeMaterial(color));
+				mesh.name = name;
+				mesh.position.copy(position);
+				mesh.castShadow = true;
+				mesh.receiveShadow = true;
+				viewer.scene.add(mesh);
+				meshCount++;
+			}
 
-window.addBox = () => {
-  addMesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    `Box_${meshCount}`,
-    new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
-    new THREE.Vector3((Math.random() - 0.5) * 6, 0.5, (Math.random() - 0.5) * 6)
-  );
-};
+			window.addBox = () => {
+				addMesh(
+					new THREE.BoxGeometry(1, 1, 1),
+					`Box_${meshCount}`,
+					new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
+					new THREE.Vector3((Math.random() - 0.5) * 6, 0.5, (Math.random() - 0.5) * 6)
+				);
+			};
 
-window.addSphere = () => {
-  addMesh(
-    new THREE.SphereGeometry(0.6, 32, 32),
-    `Sphere_${meshCount}`,
-    new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
-    new THREE.Vector3((Math.random() - 0.5) * 6, 0.6, (Math.random() - 0.5) * 6)
-  );
-};
+			window.addSphere = () => {
+				addMesh(
+					new THREE.SphereGeometry(0.6, 32, 32),
+					`Sphere_${meshCount}`,
+					new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
+					new THREE.Vector3((Math.random() - 0.5) * 6, 0.6, (Math.random() - 0.5) * 6)
+				);
+			};
 
-window.addTorus = () => {
-  addMesh(
-    new THREE.TorusGeometry(0.6, 0.25, 16, 64),
-    `Torus_${meshCount}`,
-    new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
-    new THREE.Vector3((Math.random() - 0.5) * 6, 0.9, (Math.random() - 0.5) * 6)
-  );
-};
+			window.addTorus = () => {
+				addMesh(
+					new THREE.TorusGeometry(0.6, 0.25, 16, 64),
+					`Torus_${meshCount}`,
+					new THREE.Color().setHSL(Math.random(), 0.6, 0.5),
+					new THREE.Vector3((Math.random() - 0.5) * 6, 0.9, (Math.random() - 0.5) * 6)
+				);
+			};
 
-window.addRandomMeshes = () => {
-  clearMeshes();
-  const geos = [
-    () => new THREE.BoxGeometry(1 + Math.random(), 1 + Math.random(), 1 + Math.random()),
-    () => new THREE.SphereGeometry(0.4 + Math.random() * 0.6, 24, 24),
-    () => new THREE.CylinderGeometry(0.3, 0.5, 1 + Math.random(), 16),
-    () => new THREE.TorusGeometry(0.5, 0.2, 12, 48),
-    () => new THREE.ConeGeometry(0.5, 1.5, 16),
-  ];
-  for (let i = 0; i < 12; i++) {
-    const geo = geos[Math.floor(Math.random() * geos.length)]();
-    addMesh(
-      geo,
-      `Mesh_${meshCount}`,
-      new THREE.Color().setHSL(i / 12, 0.65, 0.55),
-      new THREE.Vector3((Math.random() - 0.5) * 10, 0.75, (Math.random() - 0.5) * 10)
-    );
-  }
-  viewer.fitToView();
-};
+			window.addRandomMeshes = () => {
+				clearMeshes();
+				const geos = [
+					() => new THREE.BoxGeometry(1 + Math.random(), 1 + Math.random(), 1 + Math.random()),
+					() => new THREE.SphereGeometry(0.4 + Math.random() * 0.6, 24, 24),
+					() => new THREE.CylinderGeometry(0.3, 0.5, 1 + Math.random(), 16),
+					() => new THREE.TorusGeometry(0.5, 0.2, 12, 48),
+					() => new THREE.ConeGeometry(0.5, 1.5, 16)
+				];
+				for (let i = 0; i < 12; i++) {
+					const geo = geos[Math.floor(Math.random() * geos.length)]();
+					addMesh(
+						geo,
+						`Mesh_${meshCount}`,
+						new THREE.Color().setHSL(i / 12, 0.65, 0.55),
+						new THREE.Vector3((Math.random() - 0.5) * 10, 0.75, (Math.random() - 0.5) * 10)
+					);
+				}
+				viewer.fitToView();
+			};
 
-window.clearMeshes = () => {
-  const toRemove = [];
-  viewer.scene.traverse(obj => {
-    if (obj instanceof THREE.Mesh && obj.userData.id !== 'floor') toRemove.push(obj);
-  });
-  toRemove.forEach(obj => {
-    obj.geometry.dispose();
-    (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
-    obj.removeFromParent();
-  });
-  viewer.clearSelection();
-  infoPanel.textContent = 'Scene cleared.';
-};
+			window.clearMeshes = () => {
+				const toRemove = [];
+				viewer.scene.traverse((obj) => {
+					if (obj instanceof THREE.Mesh && obj.userData.id !== 'floor') toRemove.push(obj);
+				});
+				toRemove.forEach((obj) => {
+					obj.geometry.dispose();
+					(Array.isArray(obj.material) ? obj.material : [obj.material]).forEach((m) => m.dispose());
+					obj.removeFromParent();
+				});
+				viewer.clearSelection();
+				infoPanel.textContent = 'Scene cleared.';
+			};
 
-window.fitToView = () => viewer.fitToView();
+			window.fitToView = () => viewer.fitToView();
 
-window.toggleAutoRotate = () => {
-  autoRotate = !autoRotate;
-  viewer.controls.autoRotate = autoRotate;
-  const btn = document.getElementById('btn-autorotate');
-  btn.textContent = `Auto Rotate: ${autoRotate ? 'On' : 'Off'}`;
-  btn.classList.toggle('active', autoRotate);
-};
+			window.toggleAutoRotate = () => {
+				autoRotate = !autoRotate;
+				viewer.controls.autoRotate = autoRotate;
+				const btn = document.getElementById('btn-autorotate');
+				btn.textContent = `Auto Rotate: ${autoRotate ? 'On' : 'Off'}`;
+				btn.classList.toggle('active', autoRotate);
+			};
 
-window.toggleFloor = () => {
-  floorVisible = !floorVisible;
-  if (floor) floor.visible = floorVisible;
-  const btn = document.getElementById('btn-floor');
-  btn.textContent = `Floor: ${floorVisible ? 'On' : 'Off'}`;
-  btn.classList.toggle('active', floorVisible);
-};
+			window.toggleFloor = () => {
+				floorVisible = !floorVisible;
+				if (floor) floor.visible = floorVisible;
+				const btn = document.getElementById('btn-floor');
+				btn.textContent = `Floor: ${floorVisible ? 'On' : 'Off'}`;
+				btn.classList.toggle('active', floorVisible);
+			};
 
-window.updateSelectionColor = (hex) => {
-  // Re-initialize with new color — simplest approach since selectionColor is baked in at init
-  selectionColorHex = hex;
-};
+			window.updateSelectionColor = (hex) => {
+				// Re-initialize with new color — simplest approach since selectionColor is baked in at init
+				selectionColorHex = hex;
+			};
 
-// Start with a sample scene
-window.addRandomMeshes();
+			// Start with a sample scene
+			window.addRandomMeshes();
 
-// ─── Sidebar resize handle ────────────────────────────────────────────────────
-const sidebar = document.getElementById('sidebar');
-const handle = document.getElementById('resize-handle');
+			// ─── Sidebar resize handle ────────────────────────────────────────────────────
+			const sidebar = document.getElementById('sidebar');
+			const handle = document.getElementById('resize-handle');
 
-handle.addEventListener('mousedown', e => {
-  e.preventDefault();
-  handle.classList.add('dragging');
-  const startX = e.clientX;
-  const startWidth = sidebar.offsetWidth;
+			handle.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+				handle.classList.add('dragging');
+				const startX = e.clientX;
+				const startWidth = sidebar.offsetWidth;
 
-  const onMove = (e) => {
-    const newWidth = Math.max(160, Math.min(600, startWidth + e.clientX - startX));
-    sidebar.style.width = newWidth + 'px';
-  };
+				const onMove = (e) => {
+					const newWidth = Math.max(160, Math.min(600, startWidth + e.clientX - startX));
+					sidebar.style.width = newWidth + 'px';
+				};
 
-  const onUp = () => {
-    handle.classList.remove('dragging');
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  };
+				const onUp = () => {
+					handle.classList.remove('dragging');
+					document.removeEventListener('mousemove', onMove);
+					document.removeEventListener('mouseup', onUp);
+				};
 
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-});
-</script>
-</body>
+				document.addEventListener('mousemove', onMove);
+				document.addEventListener('mouseup', onUp);
+			});
+		</script>
+	</body>
 </html>

@@ -3,7 +3,7 @@ import { bench, describe } from 'vitest';
 import { buildMeshBatch } from '@tests/helpers/mesh-batch-builder';
 
 import { parseMeshBatch, parseMeshBatchObject } from '../batch-parser';
-import { decompressBatchedMeshData } from '../mesh-compression';
+import { parseBinaryMeshBatch } from '../binary-parser';
 
 // Realistic-ish workload: ~500 meshes, ~10 materials, ~400 verts/mesh = 200k verts.
 // Build once, reuse across iterations — vitest bench calls the fn many times.
@@ -23,7 +23,7 @@ const small = buildMeshBatch({
 	seed: 2
 });
 
-// Heavy workload to amplify the JSON.parse + decompress costs.
+// Heavy workload to amplify the JSON.parse + decode costs.
 const heavy = buildMeshBatch({
 	materialCount: 12,
 	meshCount: 1000,
@@ -32,17 +32,17 @@ const heavy = buildMeshBatch({
 });
 const heavyJson = JSON.stringify(heavy.batch);
 
-describe('decompressBatchedMeshData', () => {
-	bench('realistic (~200k verts)', async () => {
-		await decompressBatchedMeshData(realistic.batch.compressedData);
+describe('parseBinaryMeshBatch (decode only)', () => {
+	bench('realistic (~200k verts)', () => {
+		parseBinaryMeshBatch(realistic.batch.compressedData);
 	});
 
-	bench('heavy (~800k verts)', async () => {
-		await decompressBatchedMeshData(heavy.batch.compressedData);
+	bench('heavy (~800k verts)', () => {
+		parseBinaryMeshBatch(heavy.batch.compressedData);
 	});
 });
 
-describe('parseMeshBatchObject (decompress + assemble)', () => {
+describe('parseMeshBatchObject (decode + dequantize + assemble)', () => {
 	bench('small, merged', async () => {
 		await parseMeshBatchObject(small.batch, {
 			mergeByMaterial: true,
@@ -79,7 +79,7 @@ describe('parseMeshBatchObject (decompress + assemble)', () => {
 	});
 });
 
-describe('parseMeshBatch (JSON.parse + decompress + assemble)', () => {
+describe('parseMeshBatch (JSON.parse + decode + assemble)', () => {
 	bench('realistic JSON', async () => {
 		await parseMeshBatch(realisticJson, {
 			mergeByMaterial: true,
