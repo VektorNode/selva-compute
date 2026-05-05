@@ -113,8 +113,8 @@ export function parseColor(colorString: string): THREE.Color {
 
 	const trimmed = colorString.trim();
 
-	// Try hex format (#C7A5A5 or C7A5A5)
-	if (trimmed.startsWith('#') || /^[0-9A-Fa-f]{6}$/.test(trimmed)) {
+	// Try hex format (#C7A5A5 or C7A5A5) — require exactly 6 hex chars
+	if (/^#?[0-9A-Fa-f]{6}$/.test(trimmed)) {
 		try {
 			const hex = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
 			return new THREE.Color(hex);
