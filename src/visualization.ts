@@ -13,7 +13,10 @@ export {
 	getThreeMeshesFromComputeResponse,
 	SCALE_FACTORS
 } from './features/visualization/webdisplay/webdisplay-parser';
-export { parseMeshBatchObject } from './features/visualization/webdisplay/batch-parser';
+export {
+	parseMeshBatchObject,
+	parseMeshBatchBlob
+} from './features/visualization/webdisplay/batch-parser';
 
 export type {
 	ThreeInitializerOptions,
