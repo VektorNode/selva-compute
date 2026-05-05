@@ -49,7 +49,13 @@ export async function solveGrasshopperDefinition(
 	const result = await fetchRhinoCompute('grasshopper', args, config);
 
 	if ('pointer' in result) {
-		delete (result as any).pointer;
+		// Strip via shallow copy rather than `delete result.pointer` so we don't
+		// mutate an object the scheduler (or any caller holding a reference) may
+		// have already observed.
+		const { pointer: _pointer, ...rest } = result as GrasshopperComputeResponse & {
+			pointer?: unknown;
+		};
+		return rest as GrasshopperComputeResponse;
 	}
 
 	return result;

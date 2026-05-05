@@ -37,67 +37,89 @@ export function decompressMeshData(base64String: string): MeshData {
 	}
 }
 
+// In a browser environment, fflate.gunzip spawns a Web Worker so multi-MB payloads
+// don't block paint. In Node there is no Worker pool, so the callback API just adds
+// a microtask hop on top of the sync work — we use gunzipSync there for raw speed.
+const IS_BROWSER =
+	typeof globalThis !== 'undefined' &&
+	typeof (globalThis as { window?: unknown }).window !== 'undefined' &&
+	typeof (globalThis as { document?: unknown }).document !== 'undefined';
+
 /**
- * Decompresses batched mesh data asynchronously using requestIdleCallback for non-blocking decompression.
+ * Decompresses batched mesh data.
+ *
+ * In browsers, gunzip runs in a Web Worker (`fflate.gunzip`) so the main thread
+ * stays responsive — important for the multi-MB payloads typical of WebDisplay.
+ * In Node, runs synchronously since there is no main-thread/worker distinction.
+ * The base64 → binary decode runs on the calling thread either way.
+ *
+ * When `applyCoordinateTransform=true`, the Rhino Z-up → Three.js orientation
+ * rotation is folded into the vertex read, saving a full pass over the data.
  *
  * @internal Low-level decompression helper — keep internal to `@selvajs/compute`.
  * @param base64String - The base64-encoded compressed data.
+ * @param applyCoordinateTransform - If true, rotate (x, y, z) → (x, z, -y) during read.
  * @returns Promise resolving to decompressed vertices and faces arrays.
  * @throws {RhinoComputeError} If decompression fails or data is invalid.
  */
 export async function decompressBatchedMeshData(
-	base64String: string
+	base64String: string,
+	applyCoordinateTransform = false
 ): Promise<DecompressedMeshData> {
-	return new Promise((resolve, reject) => {
-		try {
-			// Use requestIdleCallback for non-blocking decompression if available
-			const decompressFn = () => {
-				try {
-					const bytes = decodeBase64ToBinary(base64String);
-					const decompressedData = fflate.gunzipSync(bytes);
-					const result = parseBatchedMeshBinaryData(decompressedData);
-					resolve(result);
-				} catch (error) {
-					reject(
-						new RhinoComputeError(
-							error instanceof RhinoComputeError
-								? error.message
-								: `Failed to decompress batched data: ${error instanceof Error ? error.message : String(error)}`,
-							error instanceof RhinoComputeError ? error.code : ErrorCodes.VALIDATION_ERROR,
-							{
-								context: { base64StringLength: base64String.length },
-								originalError: error instanceof Error ? error : new Error(String(error))
-							}
-						)
-					);
-				}
-			};
+	const bytes = decodeBase64ToBinary(base64String);
 
-			if ('requestIdleCallback' in globalThis) {
-				(globalThis as any).requestIdleCallback(decompressFn, { timeout: 5000 });
-			} else {
-				// Fallback: use setTimeout with 0 delay to yield to other tasks
-				setTimeout(decompressFn, 0);
+	let decompressed: Uint8Array;
+	try {
+		decompressed = IS_BROWSER
+			? await new Promise<Uint8Array>((resolve, reject) => {
+					fflate.gunzip(bytes, (err, data) => {
+						if (err) reject(err);
+						else resolve(data);
+					});
+				})
+			: fflate.gunzipSync(bytes);
+	} catch (error) {
+		throw new RhinoComputeError(
+			`Failed to decompress batched data: ${error instanceof Error ? error.message : String(error)}`,
+			ErrorCodes.VALIDATION_ERROR,
+			{
+				context: { base64StringLength: base64String.length },
+				originalError: error instanceof Error ? error : new Error(String(error))
 			}
-		} catch (error) {
-			reject(
-				new RhinoComputeError(
-					`Failed to schedule decompression: ${error instanceof Error ? error.message : String(error)}`,
-					ErrorCodes.VALIDATION_ERROR,
-					{ originalError: error instanceof Error ? error : new Error(String(error)) }
-				)
-			);
-		}
-	});
+		);
+	}
+
+	try {
+		return parseBatchedMeshBinaryData(decompressed, applyCoordinateTransform);
+	} catch (error) {
+		throw new RhinoComputeError(
+			error instanceof RhinoComputeError
+				? error.message
+				: `Failed to parse decompressed batched data: ${error instanceof Error ? error.message : String(error)}`,
+			error instanceof RhinoComputeError ? error.code : ErrorCodes.VALIDATION_ERROR,
+			{
+				context: { base64StringLength: base64String.length },
+				originalError: error instanceof Error ? error : new Error(String(error))
+			}
+		);
+	}
 }
 
 /**
  * Parses batched binary mesh data (all vertices and faces together).
+ *
+ * When `applyCoordinateTransform=true`, vertices are rotated (x, y, z) → (x, z, -y)
+ * directly during the read, so we only ever pass over the data once.
+ *
  * @param binaryMeshData - The binary mesh data to parse.
+ * @param applyCoordinateTransform - If true, fold the Rhino → Three orientation rotation into the read.
  * @returns The parsed mesh data with vertices and faces.
  * @throws {RhinoComputeError} If data is invalid or insufficient.
  */
-function parseBatchedMeshBinaryData(binaryMeshData: Uint8Array): DecompressedMeshData {
+function parseBatchedMeshBinaryData(
+	binaryMeshData: Uint8Array,
+	applyCoordinateTransform: boolean
+): DecompressedMeshData {
 	const dataView = new DataView(
 		binaryMeshData.buffer,
 		binaryMeshData.byteOffset,
@@ -145,14 +167,25 @@ function parseBatchedMeshBinaryData(binaryMeshData: Uint8Array): DecompressedMes
 		);
 	}
 
-	// slice() detaches the views from the gunzip buffer so downstream in-place
-	// mutations (coordinate transform) don't write back into shared memory.
-	const vertices = new Float32Array(
-		binaryMeshData.buffer.slice(
-			binaryMeshData.byteOffset + offset,
-			binaryMeshData.byteOffset + offset + verticesByteLength
-		)
-	);
+	const vertexByteOffset = binaryMeshData.byteOffset + offset;
+	let vertices: Float32Array;
+	if (applyCoordinateTransform) {
+		// Fold the Rhino Z-up → Three orientation rotation directly into the read.
+		// Reading from a zero-copy view and writing to a fresh array avoids the
+		// slice() copy + a second pass for the transform.
+		const source = new Float32Array(binaryMeshData.buffer, vertexByteOffset, numVertexFloats);
+		vertices = new Float32Array(numVertexFloats);
+		for (let i = 0; i < numVertexFloats; i += 3) {
+			const y = source[i + 1]!;
+			const z = source[i + 2]!;
+			vertices[i] = source[i]!;
+			vertices[i + 1] = z;
+			vertices[i + 2] = -y;
+		}
+	} else {
+		// No mutation downstream — zero-copy view of the gunzip buffer is safe.
+		vertices = new Float32Array(binaryMeshData.buffer, vertexByteOffset, numVertexFloats);
+	}
 	offset += verticesByteLength;
 
 	if (offset + 4 > dataView.byteLength) {
@@ -180,11 +213,13 @@ function parseBatchedMeshBinaryData(binaryMeshData: Uint8Array): DecompressedMes
 		);
 	}
 
+	// Zero-copy view: faces are read-only downstream (createMergedMesh / createIndividualMeshes
+	// rebase into fresh Uint32Arrays) so we don't need to detach from the gunzip buffer.
+	// Byte offset is guaranteed 4-aligned: header (4) + verticesByteLength (4*n) + header (4).
 	const faces = new Uint32Array(
-		binaryMeshData.buffer.slice(
-			binaryMeshData.byteOffset + offset,
-			binaryMeshData.byteOffset + offset + indicesByteLength
-		)
+		binaryMeshData.buffer,
+		binaryMeshData.byteOffset + offset,
+		numIndices
 	);
 
 	return {

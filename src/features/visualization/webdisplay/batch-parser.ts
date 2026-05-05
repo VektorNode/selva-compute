@@ -96,7 +96,10 @@ export async function parseMeshBatchObject(
 
 	try {
 		const decompressStart = performance.now();
-		const { vertices, faces } = await decompressBatchedMeshData(batch.compressedData);
+		const { vertices, faces } = await decompressBatchedMeshData(
+			batch.compressedData,
+			applyTransforms
+		);
 		decompressTime = performance.now() - decompressStart;
 
 		const compressedSizeMB = ((batch.compressedData.length * 0.75) / 1024 / 1024).toFixed(2); // Base64 overhead
@@ -116,10 +119,6 @@ export async function parseMeshBatchObject(
 				`  Compressed: ${compressedSizeMB} MB | Uncompressed: ${uncompressedSizeMB} MB`
 			);
 			getLogger().debug(`  Compression Ratio: ${compressionRatio}%`);
-		}
-
-		if (applyTransforms) {
-			applyCoordinateTransform(vertices);
 		}
 
 		const meshCreateStart = performance.now();
@@ -319,21 +318,3 @@ function createIndividualMeshes(
 	return meshes;
 }
 
-/**
- * Applies Rhino to Three.js coordinate system transformation.
- * Rhino uses Z-up, Three.js uses Y-up.
- */
-function applyCoordinateTransform(vertices: Float32Array): void {
-	const cos = Math.cos(-Math.PI / 2);
-	const sin = Math.sin(-Math.PI / 2);
-
-	for (let i = 0; i < vertices.length; i += 3) {
-		const x = vertices[i];
-		const y = vertices[i + 1];
-		const z = vertices[i + 2];
-
-		vertices[i] = x;
-		vertices[i + 1] = y * cos - z * sin;
-		vertices[i + 2] = y * sin + z * cos;
-	}
-}

@@ -99,10 +99,10 @@ function decodeBySystemType(raw: any, type: string, rhino?: any): any {
 	}
 }
 
-// Main extractor
+// Main extractor — assumes type has already been filtered through isExcludedType
+// at the call site. Returning a sentinel from here would pollute the aggregated
+// arrays in getValues / getValue when multiple branches are mixed.
 function extractItemValue(data: any, type: string, parseValues: boolean, rhino?: any): any {
-	if (isExcludedType(type)) return null;
-
 	if (typeof data !== 'string') return data;
 
 	const raw = parseValues ? tryDecodeJSON(data) : data;
@@ -157,6 +157,9 @@ export function getValues<T = ParsedContext>(
 
 	for (const param of response.values) {
 		forEachTreeItem(param.InnerTree, (item) => {
+			// Skip excluded types (e.g. WebDisplay) entirely — leaving them in
+			// would write null into the aggregated result.
+			if (isExcludedType(item.type)) return;
 			// Skip non-string types if stringOnly is enabled
 			if (stringOnly && item.type !== SYSTEM_TYPES.STRING) return;
 
@@ -258,6 +261,8 @@ export function getValue(
 
 	forEachTreeItem(targetParam.InnerTree, (item) => {
 		if ('byId' in options && item.id !== options.byId) return;
+		// Skip excluded types (e.g. WebDisplay) entirely.
+		if (isExcludedType(item.type)) return;
 		// Skip non-string types if stringOnly is enabled
 		if (stringOnly && item.type !== SYSTEM_TYPES.STRING) return;
 		const v = extractItemValue(item.data, item.type, parseValues, rhino);

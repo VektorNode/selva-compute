@@ -156,16 +156,17 @@ export default class ComputeServerStats {
 				return null;
 			}
 
+			// Read body as text first, then try JSON.parse — avoids the
+			// "Body has already been read" error if response.json() fails.
+			const text = await response.text();
 			try {
-				const json = await response.json();
+				const json = JSON.parse(text);
 				return {
 					rhino: json.rhino ?? '',
 					compute: json.compute ?? '',
 					git_sha: json.git_sha ?? null
 				};
 			} catch {
-				// Fallback: parse as plain text
-				const text = await response.text();
 				return { rhino: text, compute: '', git_sha: null };
 			}
 		} catch (err) {

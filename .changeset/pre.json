@@ -1,0 +1,10 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@selvajs/compute": "1.5.1"
+  },
+  "changesets": [
+    "beta-mesh-decompression-fixes"
+  ]
+}
