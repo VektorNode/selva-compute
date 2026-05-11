@@ -98,35 +98,44 @@ function throwHttpError(
 	errorBody: string
 ): never {
 	const { status, statusText } = response;
-	const context = { url: fullUrl, requestId, method: 'POST', requestSize, serverUrl };
 
-	const bodyHint = errorBody ? ` — ${errorBody.slice(0, 200)}` : '';
+	const responseHeaders: Record<string, string> = {};
+	response.headers.forEach((value, key) => {
+		responseHeaders[key] = value;
+	});
+
+	const trimmed = errorBody.trim();
+	const bodyHint = trimmed
+		? ` — ${trimmed.slice(0, 200)}${trimmed.length > 200 ? '…' : ''}`
+		: '';
+
+	const context = {
+		url: fullUrl,
+		requestId,
+		method: 'POST',
+		requestSize,
+		serverUrl,
+		responseBody: errorBody || undefined,
+		responseHeaders
+	};
+
 	const errorMap: Record<number, { message: string; code: string }> = {
-		401: {
-			message: `HTTP ${status}: ${statusText}${bodyHint}`,
-			code: ErrorCodes.AUTH_ERROR
-		},
-		403: {
-			message: `HTTP ${status}: ${statusText}${bodyHint}`,
-			code: ErrorCodes.AUTH_ERROR
-		},
+		401: { message: `HTTP ${status}: ${statusText}${bodyHint}`, code: ErrorCodes.AUTH_ERROR },
+		403: { message: `HTTP ${status}: ${statusText}${bodyHint}`, code: ErrorCodes.AUTH_ERROR },
 		404: { message: `Endpoint not found: ${fullUrl}`, code: ErrorCodes.NETWORK_ERROR },
 		413: {
 			message: `Request too large: ${(requestSize / 1024).toFixed(2)}KB`,
 			code: ErrorCodes.VALIDATION_ERROR
 		},
-		429: { message: 'Rate limit exceeded', code: ErrorCodes.NETWORK_ERROR },
-		500: {
-			message: `Server error: ${errorBody || statusText}`,
-			code: ErrorCodes.COMPUTATION_ERROR
-		},
-		502: { message: `Service unavailable: ${statusText}`, code: ErrorCodes.NETWORK_ERROR },
-		503: { message: `Service unavailable: ${statusText}`, code: ErrorCodes.NETWORK_ERROR },
-		504: { message: `Service unavailable: ${statusText}`, code: ErrorCodes.NETWORK_ERROR }
+		429: { message: `Rate limit exceeded${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
+		500: { message: `Server error: ${statusText}${bodyHint}`, code: ErrorCodes.COMPUTATION_ERROR },
+		502: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
+		503: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
+		504: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR }
 	};
 
 	const error = errorMap[status] || {
-		message: `HTTP ${status}: ${statusText}`,
+		message: `HTTP ${status}: ${statusText}${bodyHint}`,
 		code: ErrorCodes.UNKNOWN_ERROR
 	};
 
