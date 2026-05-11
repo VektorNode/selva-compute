@@ -1,4 +1,112 @@
-# selva-compute
+# @selvajs/compute
+
+## 1.5.2-beta.1
+
+### Patch Changes
+
+- Structural cleanup: collapse sub-feature barrel files, rename `threejs.ts` entry point to `visualization.ts`, and merge `grasshopper/types/` split into a single file. No public API changes.
+
+## 1.5.2-beta.0
+
+### Patch Changes
+
+- - Fold Rhino → Three coordinate transform into the mesh decompression read pass, eliminating a second pass over vertex data for batched WebDisplay meshes.
+  - Use `fflate.gunzip` (Web Worker) in browsers and `gunzipSync` in Node for batched mesh decompression, removing the `requestIdleCallback`/`setTimeout` scheduling hop.
+  - Skip excluded types (e.g. WebDisplay) in `getValue` / `getValues` so they no longer write `null` into aggregated results.
+  - `solveGrasshopperDefinition` no longer mutates the response object when stripping the `pointer` field; it returns a shallow copy instead.
+  - Fix `ComputeServerStats.getVersion` "Body has already been read" error when the response is non-JSON, by reading the body as text first.
+  - Tighten hex color parsing in `parseColor` to require exactly 6 hex characters.
+
+## 1.5.1
+
+### Patch Changes
+
+- 192d412: Merge with new project stucture
+
+## 1.5.0
+
+### Minor Changes
+
+- feat: robust transport layer and SolveScheduler for managing solves
+
+  **Transport robustness** (`fetchRhinoCompute`, `GrasshopperClient.solve`)
+  - Switch to `AbortSignal.timeout` so per-request timeouts are not throttled when the tab is backgrounded.
+  - Accept a caller-supplied `signal` on `ComputeConfig` and as a per-call override on `client.solve(definition, tree, { signal, timeoutMs, retry })`. Composes with the internal timeout via `AbortSignal.any` (with fallback for older runtimes).
+  - Add a configurable `retry` policy with exponential backoff + jitter for transient errors (502 / 503 / 504, network errors, and timeouts). Caller cancellation is never retried.
+  - Honor `Retry-After` on 429 responses (toggle via `retry.retryOn429`).
+  - Scrub the request `args` from timeout/network error contexts; keep `requestId`, `endpoint`, `requestSize`, `url`.
+
+  **`SolveScheduler`** — new opt-in class for managing many short solves and few long ones from one place
+  - Three scheduling modes:
+    - `latest-wins` — one in flight, supersede pending, abort in-flight when newer values arrive (slider scrubs).
+    - `queue` — FIFO with `maxConcurrent` cap (submit-job flows).
+    - `parallel` — concurrent up to `maxConcurrent` (closest to plain `client.solve`).
+  - Per-call and bulk cancellation: `solve(def, tree, { signal })` and `scheduler.cancelAll()`.
+  - Optional response cache (LRU + TTL) keyed by a stable hash of `(definition, dataTree)`.
+  - Lifecycle hooks: `onStart`, `onSettle`, `onSuperseded`.
+  - Observable state: `subscribe()`, `isSolving`, `hasPending`, `lastResult`, `lastError`, `lastDurationMs`, `inFlightCount`, `queueDepth`.
+  - Created via `client.createScheduler(options)`; multiple schedulers can share one client.
+
+  **New public exports**
+  - `SolveScheduler`, `hashSolveInput`
+  - Types: `SchedulerMode`, `SolveSchedulerOptions`, `CacheOptions`, `SolveContext`, `SolveResult`, `SolveExecutor`, `SolveOptions`, `RetryPolicy`
+
+  No breaking changes — `client.solve(definition, tree)` works exactly as before; the third argument is optional.
+
+### Patch Changes
+
+- 9269727: fix: filter invisible objects from raycaster intersections
+
+  Click and mousemove event handlers now exclude objects where `visible` is `false` from raycaster hit results, preventing interactions with hidden scene objects.
+
+## 1.4.1
+
+### Patch Changes
+
+- a9c7ec1: fix: filter invisible objects from raycaster intersections
+
+  Click and mousemove event handlers now exclude objects where `visible` is `false` from raycaster hit results, preventing interactions with hidden scene objects.
+
+## 1.4.0
+
+### Minor Changes
+
+- 9e735d4: feat: add `onReady` and `onFrame` callbacks to `initThree`; fix canvas resize flicker
+
+  ### New features
+  - `events.onReady` — called once the HDR environment map has loaded (or immediately if HDR is disabled or fails), so consumers can coordinate scene loading
+  - `events.onFrame(delta)` — called every animation frame before render, for custom per-frame logic or physics updates
+
+  ### Bug fixes
+  - **Canvas resize flicker** — resize is now applied inside the animation loop immediately before `renderer.render()`, so the buffer clear and the new frame are composited together. Previously a `ResizeObserver` callback triggered the resize asynchronously, leaving a blank frame between the clear and the next render
+  - **`clearScene` ghost groups** — now removes top-level non-floor children and traverses their subtrees for disposal, instead of traversing the whole scene for meshes. This prevents empty `Group` nodes from accumulating after their mesh children were removed
+  - **`computeCombinedBoundingBox` empty array** — now returns early on an empty array instead of returning a `Box3` with `+Infinity`/`-Infinity` bounds that would produce `NaN` vectors downstream
+  - **Tone mapping mismatch** — `setupRenderer` was falling back to `ACESFilmicToneMapping` despite `applyDefaults` always setting `NeutralToneMapping`; the stale fallback is removed
+
+  ### Breaking changes
+  - `initThree` no longer returns a `resize` method (resize is now handled automatically every frame)
+
+### Patch Changes
+
+- 9e735d4: Fix: Enhanced validation in extractFileData to properly check FileData object structure
+  - Changed property checks from uppercase (FileName, FileType, Data) to camelCase (fileName, fileType, data)
+  - Added type guards for isBase64Encoded (boolean) and subFolder (string) properties
+  - Improves type safety and ensures all required FileData properties are validated before parsing
+
+## 1.3.1
+
+### Patch Changes
+
+- 2846ee5: Fix: Enhanced validation in extractFileData to properly check FileData object structure
+  - Changed property checks from uppercase (FileName, FileType, Data) to camelCase (fileName, fileType, data)
+  - Added type guards for isBase64Encoded (boolean) and subFolder (string) properties
+  - Improves type safety and ensures all required FileData properties are validated before parsing
+
+## 1.3.0
+
+### Minor Changes
+
+- 7680657: Expose `toCamelCase` and `camelcaseKeys` utilities in the public core API.
 
 ## 1.2.0
 

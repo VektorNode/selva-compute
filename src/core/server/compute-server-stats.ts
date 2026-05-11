@@ -156,16 +156,17 @@ export default class ComputeServerStats {
 				return null;
 			}
 
+			// Read body as text first, then try JSON.parse — avoids the
+			// "Body has already been read" error if response.json() fails.
+			const text = await response.text();
 			try {
-				const json = await response.json();
+				const json = JSON.parse(text);
 				return {
 					rhino: json.rhino ?? '',
 					compute: json.compute ?? '',
 					git_sha: json.git_sha ?? null
 				};
 			} catch {
-				// Fallback: parse as plain text
-				const text = await response.text();
 				return { rhino: text, compute: '', git_sha: null };
 			}
 		} catch (err) {
@@ -242,12 +243,20 @@ export default class ComputeServerStats {
 
 			if (!active || this.disposed) return;
 
-			const _stats = await this.getServerStats();
+			try {
+				const _stats = await this.getServerStats();
 
-			// Check again after async operation to prevent race condition
-			if (!active || this.disposed) return;
+				// Check again after async operation to prevent race condition
+				if (!active || this.disposed) return;
 
-			callback(_stats);
+				try {
+					callback(_stats);
+				} catch (err) {
+					getLogger().error('[ComputeServerStats] Monitor callback threw:', err);
+				}
+			} catch (err) {
+				getLogger().error('[ComputeServerStats] Failed to fetch stats during monitor:', err);
+			}
 
 			if (active && !this.disposed) {
 				currentTimeoutId = setTimeout(() => void check(), intervalMs);

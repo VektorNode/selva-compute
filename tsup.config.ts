@@ -3,7 +3,7 @@ import { defineConfig } from 'tsup';
 const entries = {
 	index: 'src/index.ts',
 	grasshopper: 'src/grasshopper.ts',
-	visualization: 'src/features/visualization/index.ts',
+	visualization: 'src/visualization.ts',
 	core: 'src/core/index.ts'
 };
 

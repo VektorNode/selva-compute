@@ -1,11 +1,25 @@
-import { ErrorCodes } from '@/core/errors';
-import { RhinoComputeError } from '@/core/errors/base';
+import { ErrorCodes, RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core/utils/logger';
 import ComputeServerStats from '@/core/server/compute-server-stats';
-import { ComputeConfig } from '@/core/types';
+import { ComputeConfig, RetryPolicy } from '@/core/types';
 
 import { fetchDefinitionIO, fetchParsedDefinitionIO, solveGrasshopperDefinition } from '..';
 import { GrasshopperComputeConfig, GrasshopperComputeResponse, DataTree } from '../types';
+import { SolveScheduler, SolveSchedulerOptions } from '../scheduler/solve-scheduler';
+
+/**
+ * Per-call options that override the client's default ComputeConfig values.
+ *
+ * Use these for per-request control without mutating the client config:
+ * - `signal` — cancel a specific solve (e.g. when a slider value is superseded)
+ * - `timeoutMs` — extend timeout for a long-running solve, or pass `0` to disable
+ * - `retry` — override retry policy for this call only
+ */
+export interface SolveOptions {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	retry?: RetryPolicy;
+}
 
 /**
  * GrasshopperClient provides a simple API for interacting with a Rhino Compute server and grasshopper.
@@ -90,7 +104,8 @@ export default class GrasshopperClient {
 	 */
 	public async solve(
 		definition: string | Uint8Array,
-		dataTree: DataTree[]
+		dataTree: DataTree[],
+		options?: SolveOptions
 	): Promise<GrasshopperComputeResponse> {
 		this.ensureNotDisposed();
 
@@ -108,22 +123,25 @@ export default class GrasshopperClient {
 				throw new RhinoComputeError('Definition content is empty', ErrorCodes.INVALID_INPUT);
 			}
 
-			// Check server
-			if (!(await this.serverStats.isServerOnline())) {
-				throw new RhinoComputeError(
-					'Rhino Compute server is not online',
-					ErrorCodes.NETWORK_ERROR,
-					{ context: { serverUrl: this.config.serverUrl } }
-				);
-			}
+			// Per-call options override the client's stored config for this request only
+			const effectiveConfig: GrasshopperComputeConfig = {
+				...this.config,
+				...(options?.signal !== undefined && { signal: options.signal }),
+				...(options?.timeoutMs !== undefined && { timeoutMs: options.timeoutMs }),
+				...(options?.retry !== undefined && { retry: options.retry })
+			};
 
-			// Run computation
-			const result = await solveGrasshopperDefinition(dataTree, definition, this.config);
+			// Skip the redundant pre-flight healthcheck — fetchRhinoCompute already surfaces
+			// network failures with a NETWORK_ERROR code, so adding a roundtrip here only
+			// doubles latency on every solve.
+			const result = await solveGrasshopperDefinition(dataTree, definition, effectiveConfig);
 
-			// Check for errors
-			if (result && typeof result === 'object' && 'message' in result && !('fileData' in result)) {
+			// Compute may return a partial-success response (HTTP 500 with a body
+			// containing both `values` and `errors`/`warnings`). Surface that as a
+			// COMPUTATION_ERROR so callers don't silently consume a broken result.
+			if (result?.errors && result.errors.length > 0) {
 				throw new RhinoComputeError(
-					(result as { message: string }).message || 'Computation failed',
+					result.errors.join('; ') || 'Computation failed',
 					ErrorCodes.COMPUTATION_ERROR,
 					{
 						context: {
@@ -131,7 +149,9 @@ export default class GrasshopperClient {
 								typeof definition === 'string' && definition.length < 200
 									? definition
 									: '...content...',
-							inputs: dataTree
+							inputs: dataTree,
+							errors: result.errors,
+							warnings: result.warnings
 						}
 					}
 				);
@@ -165,6 +185,30 @@ export default class GrasshopperClient {
 	}
 
 	/**
+	 * Create a scheduler bound to this client. Use a scheduler for any UI surface
+	 * that fires solves frequently (sliders, live editors) or that needs cancel
+	 * semantics, response caching, or state observability.
+	 *
+	 * Multiple schedulers can be created from a single client — typically one per
+	 * UI surface so their queues stay independent.
+	 *
+	 * @example
+	 * ```ts
+	 * const sliderScheduler = client.createScheduler({ mode: 'latest-wins' });
+	 * const submitScheduler = client.createScheduler({ mode: 'queue', timeoutMs: 0, retry: { attempts: 1 } });
+	 * ```
+	 */
+	public createScheduler(options?: SolveSchedulerOptions): SolveScheduler {
+		this.ensureNotDisposed();
+		const executor = (
+			definition: string | Uint8Array,
+			dataTree: DataTree[],
+			config: GrasshopperComputeConfig
+		) => solveGrasshopperDefinition(dataTree, definition, config);
+		return new SolveScheduler(executor, this.config, options);
+	}
+
+	/**
 	 * Disposes of client resources.
 	 * Call this when you're done using the client.
 	 */
@@ -172,13 +216,7 @@ export default class GrasshopperClient {
 		if (this.disposed) return;
 
 		this.disposed = true;
-
-		// If serverStats has a dispose method, call it
-		if ('dispose' in this.serverStats && typeof this.serverStats.dispose === 'function') {
-			await this.serverStats.dispose();
-		}
-
-		// Clear any cached data or connections if needed
+		await this.serverStats.dispose();
 	}
 
 	/**
@@ -229,7 +267,7 @@ export default class GrasshopperClient {
 			apiKey: config.apiKey,
 			authToken: config.authToken,
 			debug: config.debug ?? false,
-			suppressClientSideWarning: config.suppressClientSideWarning
+			suppressBrowserWarning: config.suppressBrowserWarning ?? config.suppressClientSideWarning
 		} as T;
 	}
 }

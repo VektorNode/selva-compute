@@ -76,13 +76,13 @@ async function main() {
 
 		// Log available inputs
 		if (io.inputs.length > 0) {
-			console.error('Available inputs:', io.inputs.map(input => input.name).join(', '));
+			console.error('Available inputs:', io.inputs.map((input) => input.name).join(', '));
 		}
 
 		// Example: Modify input values if needed
 		// Check if the input exists before modifying
-		const inputToModify = "number_input_2";
-		const inputExists = io.inputs.some(input => input.name === inputToModify);
+		const inputToModify = 'number_input_2';
+		const inputExists = io.inputs.some((input) => input.name === inputToModify);
 		if (inputExists) {
 			TreeBuilder.replaceTreeValue(inputTree, inputToModify, 30);
 			console.error(`✓ Updated ${inputToModify} to 30`);

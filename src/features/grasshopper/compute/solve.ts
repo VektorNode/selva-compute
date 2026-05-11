@@ -40,7 +40,10 @@ export async function solveGrasshopperDefinition(
 	config: GrasshopperComputeConfig
 ): Promise<GrasshopperComputeResponse> {
 	if (config.debug) {
-		warnIfClientSide('solveGrasshopperDefinition', config.suppressClientSideWarning);
+		warnIfClientSide(
+			'solveGrasshopperDefinition',
+			config.suppressBrowserWarning ?? config.suppressClientSideWarning
+		);
 	}
 
 	const args = prepareGrasshopperArgs(definition, dataTree);
@@ -49,7 +52,13 @@ export async function solveGrasshopperDefinition(
 	const result = await fetchRhinoCompute('grasshopper', args, config);
 
 	if ('pointer' in result) {
-		delete (result as any).pointer;
+		// Strip via shallow copy rather than `delete result.pointer` so we don't
+		// mutate an object the scheduler (or any caller holding a reference) may
+		// have already observed.
+		const { pointer: _pointer, ...rest } = result as GrasshopperComputeResponse & {
+			pointer?: unknown;
+		};
+		return rest as GrasshopperComputeResponse;
 	}
 
 	return result;
@@ -80,7 +89,7 @@ export function prepareGrasshopperArgs(
 	if (definition instanceof Uint8Array) {
 		// Binary data → convert to base64
 		args.algo = base64ByteArray(definition);
-	} else if (definition.startsWith('http')) {
+	} else if (/^https?:\/\//i.test(definition)) {
 		// URL → use as pointer reference
 		args.pointer = definition;
 	} else if (isBase64(definition)) {
@@ -101,9 +110,9 @@ export function applyOptionalComputeSettings(
 	arglist: GrasshopperRequestSchema,
 	options: GrasshopperComputeConfig
 ): void {
-	if (options.cachesolve !== null) arglist.cachesolve = options.cachesolve;
-	if (options.modelunits !== null) arglist.modelunits = options.modelunits;
-	if (options.angletolerance !== null) arglist.angletolerance = options.angletolerance;
-	if (options.absolutetolerance !== null) arglist.absolutetolerance = options.absolutetolerance;
-	if (options.dataversion !== null) arglist.dataversion = options.dataversion;
+	if (options.cachesolve != null) arglist.cachesolve = options.cachesolve;
+	if (options.modelunits != null) arglist.modelunits = options.modelunits;
+	if (options.angletolerance != null) arglist.angletolerance = options.angletolerance;
+	if (options.absolutetolerance != null) arglist.absolutetolerance = options.absolutetolerance;
+	if (options.dataversion != null) arglist.dataversion = options.dataversion;
 }

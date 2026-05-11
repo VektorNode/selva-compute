@@ -99,14 +99,31 @@ function decodeBySystemType(raw: any, type: string, rhino?: any): any {
 	}
 }
 
-// Main extractor
+// Main extractor — assumes type has already been filtered through isExcludedType
+// at the call site. Returning a sentinel from here would pollute the aggregated
+// arrays in getValues / getValue when multiple branches are mixed.
 function extractItemValue(data: any, type: string, parseValues: boolean, rhino?: any): any {
-	if (isExcludedType(type)) return null;
-
 	if (typeof data !== 'string') return data;
 
 	const raw = parseValues ? tryDecodeJSON(data) : data;
 	return decodeBySystemType(raw, type, rhino);
+}
+
+/**
+ * Type guard for {@link FileData}. The Compute server emits these as JSON
+ * blobs inside `FileData`-typed values; this checks that the parsed shape
+ * has every required field before we trust it.
+ */
+function isFileData(value: unknown): value is FileData {
+	if (!value || typeof value !== 'object') return false;
+	const v = value as Record<string, unknown>;
+	return (
+		typeof v.fileName === 'string' &&
+		typeof v.fileType === 'string' &&
+		'data' in v &&
+		typeof v.isBase64Encoded === 'boolean' &&
+		typeof v.subFolder === 'string'
+	);
 }
 
 // Traversal helper
@@ -157,6 +174,9 @@ export function getValues<T = ParsedContext>(
 
 	for (const param of response.values) {
 		forEachTreeItem(param.InnerTree, (item) => {
+			// Skip excluded types (e.g. WebDisplay) entirely — leaving them in
+			// would write null into the aggregated result.
+			if (isExcludedType(item.type)) return;
 			// Skip non-string types if stringOnly is enabled
 			if (stringOnly && item.type !== SYSTEM_TYPES.STRING) return;
 
@@ -196,8 +216,8 @@ export function extractFileData(response: GrasshopperComputeResponse): FileData[
 			if (!item.type.includes(FILE_DATA_TYPE)) return;
 
 			const parsed = tryDecodeJSON(item.data);
-			if (parsed && parsed.FileName && parsed.FileType && parsed.Data) {
-				output.push(parsed as FileData);
+			if (isFileData(parsed)) {
+				output.push(parsed);
 			}
 		});
 	}
@@ -251,6 +271,8 @@ export function getValue(
 
 	forEachTreeItem(targetParam.InnerTree, (item) => {
 		if ('byId' in options && item.id !== options.byId) return;
+		// Skip excluded types (e.g. WebDisplay) entirely.
+		if (isExcludedType(item.type)) return;
 		// Skip non-string types if stringOnly is enabled
 		if (stringOnly && item.type !== SYSTEM_TYPES.STRING) return;
 		const v = extractItemValue(item.data, item.type, parseValues, rhino);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { applyOffset, computeCombinedBoundingBox } from '../threejs';
+import { applyOffset, computeCombinedBoundingBox } from '../threejs/three-helpers.js';
 import { getLogger } from '@/core';
 
 import { parseMeshBatch } from './batch-parser';

@@ -14,13 +14,15 @@ import type {
 	TextInputType,
 	ValueListInputType,
 	FileInputType,
-	ColorInputType
+	ColorInputType,
+	InputParseError
 } from '../../types';
 
 /**
  * Creates a safe default InputType when processing fails
  */
 function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType): InputParam {
+	const isList = (rawInput.atMost ?? 1) > 1;
 	switch (rawInput.paramType) {
 		case 'Number':
 		case 'Integer':
@@ -31,44 +33,44 @@ function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType)
 				maximum: rawInput.maximum,
 				atLeast: rawInput.atLeast,
 				atMost: rawInput.atMost,
-				default: rawInput.atMost > 1 ? [0] : 0
+				default: isList ? [0] : 0
 			} as NumericInputType;
 		case 'Boolean':
 			return {
 				...baseInput,
 				paramType: 'Boolean',
-				default: rawInput.atMost > 1 ? [false] : false
+				default: isList ? [false] : false
 			} as BooleanInputType;
 		case 'Text':
 			return {
 				...baseInput,
 				paramType: 'Text',
-				default: rawInput.atMost > 1 ? [''] : ''
+				default: isList ? [''] : ''
 			} as TextInputType;
 		case 'ValueList':
 			return {
 				...baseInput,
 				paramType: 'ValueList',
 				values: rawInput.values ?? {},
-				default: rawInput.atMost > 1 ? [rawInput.default] : rawInput.default
+				default: isList ? [rawInput.default] : rawInput.default
 			} as ValueListInputType;
 		case 'File':
 			return {
 				...baseInput,
 				paramType: 'File',
-				default: rawInput.atMost > 1 ? [null] : null
+				default: isList ? [null] : null
 			} as FileInputType;
 		case 'Color':
 			return {
 				...baseInput,
 				paramType: 'Color',
-				default: rawInput.atMost > 1 ? ['0, 0, 0'] : '0, 0, 0'
+				default: isList ? ['0, 0, 0'] : '0, 0, 0'
 			} as ColorInputType;
 		default:
 			return {
 				...baseInput,
 				paramType: 'Geometry',
-				default: rawInput.atMost > 1 ? [null] : null
+				default: isList ? [null] : null
 			} as GeometryInputType;
 	}
 }
@@ -116,7 +118,25 @@ function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType)
  * ```
  */
 export function processInput(rawInput: InputParamSchema): InputParam {
-	// Create base properties outside try-catch so it's accessible in catch block
+	return processInputWithError(rawInput).input;
+}
+
+/**
+ * Like {@link processInput}, but reports validation failures back to the caller
+ * instead of swallowing them with a logger warning.
+ *
+ * On success: `{ input, error: undefined }`.
+ * On a recoverable validation failure: `{ input: <safe default>, error: {...} }`.
+ *
+ * Unexpected (non-RhinoComputeError) failures still throw — they indicate a
+ * programming bug, not bad user input.
+ *
+ * @internal Used by {@link processInputsWithErrors} / {@link fetchParsedDefinitionIO}.
+ */
+export function processInputWithError(rawInput: InputParamSchema): {
+	input: InputParam;
+	error?: InputParseError;
+} {
 	const baseInput: BaseInputType = {
 		description: rawInput.description,
 		name: rawInput.name,
@@ -127,90 +147,106 @@ export function processInput(rawInput: InputParamSchema): InputParam {
 	};
 
 	try {
-		// Handle default object processing
 		preProcessInputDefault(rawInput);
 
-		// Get parser for this type
 		const parser = PARSERS[rawInput.paramType];
 		if (!parser) {
 			throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
 		}
 
-		// Apply type-specific parsing
 		parser(rawInput);
 
-		// Return typed result based on paramType
 		switch (rawInput.paramType) {
 			case 'Number':
 			case 'Integer':
 				return {
-					...baseInput,
-					paramType: rawInput.paramType,
-					minimum: rawInput.minimum,
-					maximum: rawInput.maximum,
-					atLeast: rawInput.atLeast,
-					atMost: rawInput.atMost,
-					stepSize: rawInput.stepSize,
-					default: rawInput.default as number | undefined
-				} as NumericInputType;
+					input: {
+						...baseInput,
+						paramType: rawInput.paramType,
+						minimum: rawInput.minimum,
+						maximum: rawInput.maximum,
+						atLeast: rawInput.atLeast,
+						atMost: rawInput.atMost,
+						stepSize: rawInput.stepSize,
+						default: rawInput.default as number | undefined
+					} as NumericInputType
+				};
 			case 'Boolean':
 				return {
-					...baseInput,
-					paramType: 'Boolean',
-					default: rawInput.default as boolean | undefined
-				} as BooleanInputType;
+					input: {
+						...baseInput,
+						paramType: 'Boolean',
+						default: rawInput.default as boolean | undefined
+					} as BooleanInputType
+				};
 			case 'Text':
 				return {
-					...baseInput,
-					paramType: 'Text',
-					default: rawInput.default as string | undefined
-				} as TextInputType;
+					input: {
+						...baseInput,
+						paramType: 'Text',
+						default: rawInput.default as string | undefined
+					} as TextInputType
+				};
 			case 'ValueList':
 				return {
-					...baseInput,
-					paramType: 'ValueList',
-					values: rawInput.values as Record<string, string>,
-					default: rawInput.default as string | undefined
-				} as ValueListInputType;
+					input: {
+						...baseInput,
+						paramType: 'ValueList',
+						values: rawInput.values as Record<string, string>,
+						default: rawInput.default as string | undefined
+					} as ValueListInputType
+				};
 			case 'Geometry':
 				return {
-					...baseInput,
-					paramType: rawInput.paramType as 'Geometry',
-					default: rawInput.default as object | string | undefined
-				} as GeometryInputType;
+					input: {
+						...baseInput,
+						paramType: rawInput.paramType as 'Geometry',
+						default: rawInput.default as object | string | undefined
+					} as GeometryInputType
+				};
 			case 'File':
 				return {
-					...baseInput,
-					paramType: rawInput.paramType as 'File',
-					acceptedFormats: rawInput.acceptedFormats,
-					default: rawInput.default as object | string | undefined
-				} as FileInputType;
+					input: {
+						...baseInput,
+						paramType: rawInput.paramType as 'File',
+						acceptedFormats: rawInput.acceptedFormats,
+						default: rawInput.default as object | string | undefined
+					} as FileInputType
+				};
 			case 'Color':
 				return {
-					...baseInput,
-					paramType: 'Color',
-					default: rawInput.default as string | undefined
-				} as ColorInputType;
+					input: {
+						...baseInput,
+						paramType: 'Color',
+						default: rawInput.default as string | undefined
+					} as ColorInputType
+				};
 			default:
-				// This should be unreachable due to parser registry check above
 				throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
 		}
 	} catch (error) {
 		if (error instanceof RhinoComputeError) {
 			getLogger().error(`Validation error for input ${rawInput.name || 'unknown'}:`, error.message);
-			// Return a safe default based on paramType
-			return createSafeDefault(rawInput, baseInput);
-		} else {
-			// Transform unexpected errors
-			throw new RhinoComputeError(
-				error instanceof Error ? error.message : String(error),
-				'VALIDATION_ERROR',
-				{
-					context: { paramName: rawInput.name, paramType: rawInput.paramType },
-					originalError: error instanceof Error ? error : new Error(String(error))
+			return {
+				input: createSafeDefault(rawInput, baseInput),
+				error: {
+					inputName: rawInput.name || 'unknown',
+					paramType: rawInput.paramType,
+					message: error.message,
+					code: error.code
 				}
-			);
+			};
 		}
+
+		// Unexpected failure — surface it.
+		throw new RhinoComputeError(
+			error instanceof Error ? error.message : String(error),
+			'VALIDATION_ERROR',
+			{
+				context: { paramName: rawInput.name, paramType: rawInput.paramType },
+				originalError: error instanceof Error ? error : new Error(String(error))
+			}
+		);
 	}
 }
 
@@ -256,5 +292,25 @@ export function processInput(rawInput: InputParamSchema): InputParam {
  * @see {@link processInput} for individual input processing logic
  */
 export function processInputs(rawInputs: InputParamSchema[]): InputParam[] {
-	return rawInputs.map((rawInput) => processInput(rawInput));
+	return processInputsWithErrors(rawInputs).inputs;
+}
+
+/**
+ * Like {@link processInputs}, but additionally returns a list of inputs that
+ * failed validation and were filled with a safe default.
+ *
+ * @internal Used by {@link fetchParsedDefinitionIO}.
+ */
+export function processInputsWithErrors(rawInputs: InputParamSchema[]): {
+	inputs: InputParam[];
+	parseErrors: InputParseError[];
+} {
+	const inputs: InputParam[] = [];
+	const parseErrors: InputParseError[] = [];
+	for (const raw of rawInputs) {
+		const { input, error } = processInputWithError(raw);
+		inputs.push(input);
+		if (error) parseErrors.push(error);
+	}
+	return { inputs, parseErrors };
 }

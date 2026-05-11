@@ -200,7 +200,7 @@ interface GrasshopperComputeConfig {
 	authToken?: string;
 	timeoutMs?: number;
 	debug?: boolean;
-	suppressClientSideWarning?: boolean;
+	suppressBrowserWarning?: boolean;
 
 	// Grasshopper-specific
 	cachesolve?: boolean;

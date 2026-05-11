@@ -1,6 +1,6 @@
 # Core Module
 
-Foundational utilities and low-level clients that power the `selva-compute` library. This module handles the "plumbing" of communicating with Rhino Compute.
+Foundational utilities and low-level clients that power the `@selvajs/compute` library. This module handles the "plumbing" of communicating with Rhino Compute.
 
 ## Key Responsibilities
 
@@ -29,7 +29,7 @@ The `core` module provides the building blocks for the rest of the library. Belo
 Use `fetchRhinoCompute` for type-safe requests to arbitrary Rhino Compute endpoints.
 
 ```typescript
-import { fetchRhinoCompute, RhinoComputeError } from 'selva-compute/core';
+import { fetchRhinoCompute, RhinoComputeError } from '@selvajs/compute/core';
 
 async function performCustomJob(config) {
 	try {
@@ -53,7 +53,7 @@ async function performCustomJob(config) {
 Use `ComputeServerStats` to check server health, get the version, or monitor active child processes.
 
 ```typescript
-import { ComputeServerStats } from 'selva-compute/core';
+import { ComputeServerStats } from '@selvajs/compute/core';
 
 async function checkServer(url, apiKey) {
 	const stats = new ComputeServerStats(url, apiKey);

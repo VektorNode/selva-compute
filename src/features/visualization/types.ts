@@ -81,4 +81,8 @@ export type EventConfig = {
 	enableClickToFocus?: boolean;
 	/** Zoom into a mesh on double-click. Defaults to true. */
 	enableDoubleClickZoom?: boolean;
+	/** Called once the HDR environment map has finished loading and been applied to the scene. */
+	onReady?: () => void;
+	/** Called every animation frame, after controls update and before render. Use for custom per-frame logic. */
+	onFrame?: (delta: number) => void;
 };

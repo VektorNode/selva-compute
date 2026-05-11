@@ -4,14 +4,9 @@ import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
 import { prepareGrasshopperArgs } from '../compute/solve';
 
-import {
-	InputParam,
-	GrasshopperParsedIO,
-	GrasshopperParsedIORaw,
-	IoResponseSchema
-} from '../types';
+import { GrasshopperParsedIO, GrasshopperParsedIORaw, IoResponseSchema } from '../types';
 
-import { processInputs } from './input/input-processors';
+import { processInputsWithErrors } from './input/input-processors';
 
 /**
  * Fetches raw input/output schemas from a Grasshopper definition.
@@ -32,6 +27,14 @@ export async function fetchDefinitionIO(
 	const payload: { algo?: string | null; pointer?: string | null } = {};
 	if (args.algo) payload.algo = args.algo;
 	if (args.pointer) payload.pointer = args.pointer;
+
+	if (!payload.algo && !payload.pointer) {
+		throw new RhinoComputeError(
+			'Definition must resolve to either a URL pointer or base64 algo',
+			ErrorCodes.INVALID_INPUT,
+			{ context: { definition } }
+		);
+	}
 
 	const response = await fetchRhinoCompute<'io'>('io', payload, config);
 
@@ -80,10 +83,13 @@ export async function fetchParsedDefinitionIO(
 	definition: string | Uint8Array,
 	config: ComputeConfig
 ): Promise<GrasshopperParsedIO> {
-	warnIfClientSide('fetchParsedDefinitionIO', config.suppressClientSideWarning);
+	warnIfClientSide(
+		'fetchParsedDefinitionIO',
+		config.suppressBrowserWarning ?? config.suppressClientSideWarning
+	);
 
 	const { inputs: rawInputs, outputs } = await fetchDefinitionIO(definition, config);
-	const inputs: InputParam[] = processInputs(rawInputs);
+	const { inputs, parseErrors } = processInputsWithErrors(rawInputs);
 
-	return { inputs, outputs };
+	return parseErrors.length > 0 ? { inputs, outputs, parseErrors } : { inputs, outputs };
 }
