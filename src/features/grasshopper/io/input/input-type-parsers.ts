@@ -1,5 +1,6 @@
 import { RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core';
+import { isDataTreeDefault } from '../../data-tree/tree-path';
 import type {
 	BaseInputType,
 	BooleanInputType,
@@ -47,18 +48,6 @@ type ValueTransformer<T> = (value: unknown) => T | null;
  * transform-or-(undefined|preserve). Returns the new default value rather than
  * mutating.
  */
-/**
- * A tree-access input's default is a `DataTreeDefault` — an object keyed by
- * branch paths like `{0}` / `{0;1}`, already normalized by `normalizeDefault`.
- * It must reach `TreeBuilder.fromInputParams` intact, so the scalar transformers
- * (which only understand scalar/array defaults) must pass it through untouched.
- */
-function isTreeShapedDefault(value: unknown): boolean {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const keys = Object.keys(value as Record<string, unknown>);
-	return keys.length > 0 && keys.every((k) => /^\{.*\}$/.test(k));
-}
-
 function coerceDefault<T>(
 	value: unknown,
 	transform: ValueTransformer<T>,
@@ -206,8 +195,10 @@ function computeNumeric(
 	// A tree-access default is a DataTreeDefault keyed by branch paths; pass it
 	// through untouched (numeric constraints are applied later by TreeBuilder).
 	// Without this guard the scalar numericTransformer mangles the tree object to
-	// `undefined`, silently dropping a tree-access slider's default.
-	if (isTreeShapedDefault(schema.default)) {
+	// `undefined`, silently dropping a tree-access slider's default. Sharing
+	// `isDataTreeDefault` with TreeBuilder guarantees we pass through exactly the
+	// values it will treat as trees — no looser, no stricter.
+	if (isDataTreeDefault(schema.default)) {
 		return {
 			default: schema.default as NumericInputType['default'],
 			stepSize: isIntegerType ? 1 : 0.1

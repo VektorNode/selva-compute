@@ -11,7 +11,11 @@ named after a concept, it should be the concept named here.
 - **Solve** — sending a definition + inputs to Rhino Compute and getting back
   computed values. The central operation.
 - **Data tree** — Grasshopper's hierarchical value structure (branch paths like
-  `{0}`, `{0;1}`). The exchange format for inputs and outputs.
+  `{0}`, `{0;1}`, or the root `{}`). The exchange format for inputs and outputs.
+  The branch-path shape has one canonical home: `TREE_PATH_RE` and the
+  `isDataTreeDefault` membership test in `data-tree/tree-path.ts`. Anything asking
+  "is this a tree-shaped default?" — the input-type parsers and `TreeBuilder` —
+  imports that predicate rather than re-inlining the regex.
 - **IO** — the inputs and outputs a definition declares. `getIO` fetches them.
 - **Input param** — one declared input of a definition, parsed into a typed
   shape (`NumericInputType`, `TextInputType`, …). The union is `InputParam`.
@@ -52,6 +56,18 @@ named after a concept, it should be the concept named here.
   `TreeBuilder.fromInputParams` reads exactly that shape. The numeric parser used
   to run scalar coercion over the tree object and silently collapse it to
   `undefined` — dropping a tree-access slider's default. The numeric parser now
-  detects a tree-shaped default (`isTreeShapedDefault`) and passes it through
+  detects a tree-shaped default (`isDataTreeDefault`) and passes it through
   untouched; the other scalar parsers already preserved it. Pinned by the
   `tree-access defaults` block in `process-inputs.characterization.test.ts`.
+
+- **Branch-path detection forked across three sites** _(fixed)._ "Is this value a
+  tree-shaped default?" was answered by two divergent runtime predicates — the
+  parser's `isTreeShapedDefault` (loose: `/^\{.*\}$/`, no array-value check) and
+  `TreeBuilder`'s private `isDataTreeStructure` (strict: `/^\{[\d;]+\}$/`, arrays
+  required) — plus a third inline `[\d;]*` regex in `parsePathString`. The two
+  predicates could classify the same value differently. Unified on one exported
+  `isDataTreeDefault` / `TREE_PATH_RE` in `data-tree/tree-path.ts`, widened to
+  accept the root path `{}` (matching `parsePathString`). The parser and
+  `TreeBuilder` now share the predicate, so they agree by construction on which
+  values are trees. No behavior change — pinned by the existing characterization
+  and `data-tree` test suites.
