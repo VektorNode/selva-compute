@@ -2,39 +2,41 @@ import { getLogger } from '@/core';
 import type { InputParamSchema } from '../../types';
 
 /**
- * @internal Pre-processing helpers for raw input parameters.
- */
-
-/**
- * Pre-processes raw input to normalize default values
- * Handles data tree structures, flattening, and type parsing
+ * @internal Shared, type-independent normalization of a raw input's `default`.
  *
- * @param input - The input parameter to pre-process
+ * This is the first step of the input-type parser pipeline: it flattens the
+ * raw Grasshopper `innerTree` default into the shape the per-type parsers
+ * expect, BEFORE type dispatch. The flat-vs-tree decision depends only on
+ * `treeAccess` / `atMost`, never on the param type — which is why it lives here
+ * as one shared step rather than inside each parser.
  *
- * @remarks
- * Handles:
- * - Empty data trees → undefined
- * - Tree structure preservation for tree access parameters
- * - Flattening of multiple values
- * - Type-aware parsing (numbers, booleans, JSON)
+ * Pure: returns a new schema with a normalized `default`; never mutates the
+ * input. Replaces the old in-place `preProcessInputDefault`.
+ *
+ * Behavior (pinned by characterization tests — keep identical):
+ * - Non-object / null default → returned unchanged.
+ * - Object without `innerTree` → default becomes `null` (and warns).
+ * - Empty `innerTree` → default becomes `undefined`.
+ * - tree-access (`treeAccess` or `atMost > 1`) → default becomes a
+ *   `Record<branch, parsed[]>` with per-item type-aware parsing.
+ * - otherwise → flatten all branch items: 0 → `undefined`, 1 → the value,
+ *   N → the array.
  */
-export function preProcessInputDefault(input: InputParamSchema): void {
+export function normalizeDefault(input: InputParamSchema): InputParamSchema {
 	if (typeof input.default !== 'object' || input.default === null) {
-		return;
+		return input;
 	}
 
 	if (!('innerTree' in input.default)) {
 		getLogger().warn('Unexpected structure in input.default:', input.default);
-		input.default = null;
-		return;
+		return { ...input, default: null };
 	}
 
 	const innerTree = (input.default as any).innerTree;
 
 	// If innerTree is empty, set default to undefined
 	if (Object.keys(innerTree).length === 0) {
-		input.default = undefined;
-		return;
+		return { ...input, default: undefined };
 	}
 
 	// If treeAccess is true or atMost > 1, preserve the tree structure
@@ -63,8 +65,7 @@ export function preProcessInputDefault(input: InputParamSchema): void {
 				return item.data;
 			});
 		}
-		input.default = tree;
-		return;
+		return { ...input, default: tree };
 	}
 
 	// Otherwise, flatten all values as before
@@ -79,10 +80,10 @@ export function preProcessInputDefault(input: InputParamSchema): void {
 		}
 	}
 	if (allValues.length === 0) {
-		input.default = undefined;
+		return { ...input, default: undefined };
 	} else if (allValues.length === 1) {
-		input.default = allValues[0];
+		return { ...input, default: allValues[0] };
 	} else {
-		input.default = allValues;
+		return { ...input, default: allValues };
 	}
 }

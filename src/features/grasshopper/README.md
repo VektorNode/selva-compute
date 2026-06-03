@@ -46,13 +46,12 @@ grasshopper/
 ├── client/              # High-level GrasshopperClient class
 ├── compute/             # Low-level solve operations
 ├── io/                  # Input/output handling
-│   ├── input/           # Input parsing and processing
-│   │   ├── input-helpers/    # Grouping, validation utilities
-│   │   └── input-parsers/    # Type-specific parsers
-│   ├── output/          # Output response processing
-│   └── tree-helpers/    # Data tree utilities
+│   ├── input/           # Input parsing: normalize-default, input-type-parsers, input-processors
+│   └── output/          # Output response processing
+├── data-tree/           # Data tree utilities (TreeBuilder)
+├── scheduler/           # Solve scheduling (latest-wins / queue / parallel)
 ├── file-handling/       # File extraction and downloading utilities
-├── types/               # TypeScript type definitions
+├── types.ts             # TypeScript type definitions
 └── index.ts             # Public API exports
 ```
 
@@ -175,12 +174,12 @@ await client.solve(url, values);
 
 ### Custom Input Parsers
 
-See [`io/input/input-parsers/README.md`](io/input/input-parsers/README.md) for how to add support
-for new Grasshopper parameter types.
+See [`io/input/README.md`](io/input/README.md) for how to add support
+for new Grasshopper parameter types (the `InputTypeParser` registry).
 
 ### Data Tree Manipulation
 
-See [`io/tree-helpers/README.md`](io/tree-helpers/README.md) for utilities to work with
+See [`data-tree/README.md`](data-tree/README.md) for utilities to work with
 Grasshopper's data tree structure.
 
 ### Response Processing
