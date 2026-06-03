@@ -1,5 +1,20 @@
 # Codebase Improvement Plan: `@selvajs/compute`
 
+> **⚠️ Historical audit log (2025).** This is a point-in-time record of a
+> full-repo audit, kept for narrative. It is **not a current map of the code** —
+> several referenced files have since moved or been collapsed (e.g.
+> `core/errors/{base,error-codes}.ts` → `core/errors.ts`;
+> `io/input/input-validators.ts` and the in-place input parsers → the
+> `input-type-parsers.ts` registry; `webdisplay/mesh-compression.ts` was never
+> created — that transform lives inline in `batch-parser.ts`). Resolution notes
+> below are preserved as they were written; don't treat their paths as live.
+>
+> **Still open** (the "All structural items complete" line below was premature):
+> **S4** one-file `compute/` folder, **S6** inconsistent `__tests__/` placement,
+> **S7** `webdisplay/types.ts` vs `visualization/types.ts` split, **S8**
+> `file-handling/` misplaced under `grasshopper/`. For current architecture
+> direction see [`../CONTEXT.md`](../CONTEXT.md) and [`adr/`](adr/).
+
 Audit findings from a full-repo scan. Grouped by severity, with file links and concrete fix suggestions. Items at the bottom are picks for "do first."
 
 ---
@@ -444,4 +459,6 @@ src/
 
 ## Recommended order (structure)
 
-Resolved: S1, S2, S3, S5, S9. All structural items complete.
+Resolved: S1, S2, S3, S5, S9. **Still open: S4, S6, S7, S8** (see the banner at
+the top of this file). The original "All structural items complete" was
+incorrect — those four were never addressed.
