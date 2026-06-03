@@ -44,16 +44,19 @@ and compile-time validation.
 ```
 grasshopper/
 ├── client/              # High-level GrasshopperClient class
-├── compute/             # Low-level solve operations
+├── solve.ts             # Low-level solve operation
 ├── io/                  # Input/output handling
 │   ├── input/           # Input parsing: normalize-default, input-type-parsers, input-processors
 │   └── output/          # Output response processing
 ├── data-tree/           # Data tree utilities (TreeBuilder)
 ├── scheduler/           # Solve scheduling (latest-wins / queue / parallel)
-├── file-handling/       # File extraction and downloading utilities
 ├── types.ts             # TypeScript type definitions
 └── index.ts             # Public API exports
 ```
+
+> Generic file zip/base64/download utilities live in [`core/files/`](../../core/files/)
+> (not Grasshopper-specific); only `extractFileData` — which reads a Grasshopper
+> response — stays here, in `io/output/`.
 
 ## Key Features
 

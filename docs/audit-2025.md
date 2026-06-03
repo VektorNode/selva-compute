@@ -10,10 +10,12 @@
 > below are preserved as they were written; don't treat their paths as live.
 >
 > **Still open** (the "All structural items complete" line below was premature):
-> **S4** one-file `compute/` folder, **S6** inconsistent `__tests__/` placement,
-> **S7** `webdisplay/types.ts` vs `visualization/types.ts` split, **S8**
-> `file-handling/` misplaced under `grasshopper/`. For current architecture
-> direction see [`../CONTEXT.md`](../CONTEXT.md) and [`adr/`](adr/).
+> **S6** inconsistent `__tests__/` placement, **S7** `webdisplay/types.ts` vs
+> `visualization/types.ts` split. (**S4** one-file `compute/` folder and **S8**
+> `file-handling/` misplacement are now resolved — `compute/solve.ts` was inlined
+> to `grasshopper/solve.ts`, and `file-handling/` was hoisted to `core/files/`.)
+> For current architecture direction see [`../CONTEXT.md`](../CONTEXT.md) and
+> [`adr/`](adr/).
 
 Audit findings from a full-repo scan. Grouped by severity, with file links and concrete fix suggestions. Items at the bottom are picks for "do first."
 
@@ -459,6 +461,7 @@ src/
 
 ## Recommended order (structure)
 
-Resolved: S1, S2, S3, S5, S9. **Still open: S4, S6, S7, S8** (see the banner at
+Resolved: S1, S2, S3, S4, S5, S8, S9. **Still open: S6, S7** (see the banner at
 the top of this file). The original "All structural items complete" was
-incorrect — those four were never addressed.
+incorrect — S4/S6/S7/S8 were unaddressed at the time; S4 and S8 have since been
+done (compute/ inlined, file-handling/ → core/files/).

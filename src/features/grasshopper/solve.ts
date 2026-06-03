@@ -7,7 +7,7 @@ import {
 	GrasshopperComputeConfig,
 	GrasshopperComputeResponse,
 	DataTree
-} from '../types';
+} from './types';
 
 /**
  * Runs a Rhino Compute job using the provided tree prototypes and Grasshopper definition.

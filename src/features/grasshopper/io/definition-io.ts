@@ -2,7 +2,7 @@ import { ComputeConfig, RhinoComputeError, ErrorCodes } from '@/core';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
 import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
-import { prepareGrasshopperArgs } from '../compute/solve';
+import { prepareGrasshopperArgs } from '../solve';
 
 import { GrasshopperParsedIO, GrasshopperParsedIORaw, IoResponseSchema } from '../types';
 

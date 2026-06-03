@@ -1,4 +1,4 @@
-import { FileData } from '../../file-handling/types';
+import { FileData } from '@/core/files/types';
 import { GrasshopperComputeResponse, DataItem } from '../../types';
 import { decodeRhinoGeometry } from './rhino-decoder';
 

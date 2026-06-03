@@ -1,4 +1,5 @@
-import { RhinoComputeError, ErrorCodes, getLogger } from '@/core';
+import { RhinoComputeError, ErrorCodes } from '@/core/errors';
+import { getLogger } from '@/core/utils/logger';
 import { decodeBase64ToBinary } from '@/core/utils/encoding';
 
 import { FileBaseInfo, FileData, ProcessedFile } from './types';

@@ -1,5 +1,5 @@
-import { downloadFileData } from '@/features/grasshopper/file-handling/handle-files';
-import { FileBaseInfo, FileData } from '@/features/grasshopper/file-handling/types';
+import { downloadFileData } from '@/core/files/handle-files';
+import { FileBaseInfo, FileData } from '@/core/files/types';
 import type { MeshExtractionOptions } from '@/features/visualization/webdisplay/types';
 import { RhinoComputeError, ErrorCodes } from '@/core/errors';
 
