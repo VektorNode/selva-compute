@@ -4,6 +4,18 @@ import { preProcessInputDefault } from './input-validators';
 import { PARSERS } from './input-parsers';
 import { getLogger } from '@/core/utils/logger';
 
+/** Canonical paramType for each supported type, keyed by its lowercased form. */
+const CANONICAL_PARAM_TYPES = new Map(Object.keys(PARSERS).map((key) => [key.toLowerCase(), key]));
+
+/**
+ * Returns the canonical casing for a paramType (e.g. "valuelist" → "ValueList"),
+ * or the original value unchanged when it isn't a known type so the
+ * unknown-paramType error still surfaces downstream.
+ */
+function canonicalizeParamType(paramType: string): string {
+	return CANONICAL_PARAM_TYPES.get(paramType?.toLowerCase()) ?? paramType;
+}
+
 import type {
 	BaseInputType,
 	BooleanInputType,
@@ -145,6 +157,12 @@ export function processInputWithError(rawInput: InputParamSchema): {
 		groupName: rawInput.groupName ?? '',
 		id: rawInput.id
 	};
+
+	// Normalize paramType to its canonical casing so callers can send any case
+	// (e.g. Selva schemas emit lowercase "valueList" while the plugin reports
+	// "ValueList"). Both the PARSERS lookup and the switch below match exactly,
+	// so we canonicalize once up front rather than at each comparison site.
+	rawInput.paramType = canonicalizeParamType(rawInput.paramType);
 
 	try {
 		preProcessInputDefault(rawInput);
