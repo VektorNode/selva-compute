@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 1.5.3
+
+### Patch Changes
+
+- 9253770: Match input `paramType` case-insensitively so lowercase schema types (e.g. `valueList`) no longer fail with "Unsupported paramType". Any casing now resolves to its canonical type before parsing.
+
 ## 1.5.2
 
 ### Patch Changes
