@@ -71,3 +71,16 @@ named after a concept, it should be the concept named here.
   `TreeBuilder` now share the predicate, so they agree by construction on which
   values are trees. No behavior change — pinned by the existing characterization
   and `data-tree` test suites.
+
+- **Binary definitions colliding in the solve cache** _(fixed)._ The Scheduler's
+  response cache keys on `hashSolveInput(definition, dataTree)`. A binary
+  (`Uint8Array`) definition was keyed on its **length alone** (`{ __u8, len }`) —
+  despite the docstring claiming a sample — so two different `.gh` files of equal
+  length produced the same key and one's cached solve was served for the other,
+  silently, as a `fromCache: true` success. Binary definitions are now hashed over
+  their **full content** (`fnv1aBytes`), prefixed `u8:<len>:<hash>`. This is the
+  definition's _identity_, so correctness wins over the marginal cost of a linear
+  byte pass — distinct from `stableStringify`'s deliberate sampling of a
+  `Uint8Array` found _inside_ a dataTree (hashed every solve). Pinned by
+  `scheduler/__tests__/stable-hash.test.ts` (equal-length and shared-endpoint
+  collision regressions).

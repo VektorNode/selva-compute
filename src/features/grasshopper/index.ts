@@ -24,7 +24,7 @@ export type {
 	SolveResult,
 	SolveExecutor
 } from './scheduler/solve-scheduler';
-export { hashSolveInput, stableStringify, fnv1a } from './scheduler/stable-hash';
+export { hashSolveInput, stableStringify, fnv1a, fnv1aBytes } from './scheduler/stable-hash';
 
 // ============================================================================
 // COMPUTATION
