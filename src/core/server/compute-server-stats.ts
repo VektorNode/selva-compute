@@ -1,5 +1,6 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
+import { validateServerUrl } from './validate-server-url';
 
 /**
  * ComputeServerStats provides methods to query Rhino Compute server statistics.
@@ -34,38 +35,8 @@ export default class ComputeServerStats {
 	 * @param apiKey - Optional API key for authentication
 	 */
 	constructor(serverUrl: string, apiKey?: string) {
-		if (!serverUrl?.trim()) {
-			throw new RhinoComputeError('serverUrl is required', ErrorCodes.INVALID_CONFIG, {
-				context: { serverUrl }
-			});
-		}
-
-		// Validate URL has http:// or https:// scheme
-		if (!serverUrl.match(/^https?:\/\//)) {
-			throw new RhinoComputeError(
-				`Invalid serverUrl: "${serverUrl}". Must start with "http://" or "https://". ` +
-					`For example: "http://localhost:5000" or "https://example.com"`,
-				ErrorCodes.INVALID_CONFIG,
-				{ context: { serverUrl } }
-			);
-		}
-
-		try {
-			new URL(serverUrl);
-		} catch (err) {
-			throw new RhinoComputeError(
-				`Invalid serverUrl: "${serverUrl}". Must be a valid URL. ` +
-					`Received error: ${err instanceof Error ? err.message : String(err)}`,
-				ErrorCodes.INVALID_CONFIG,
-				{
-					context: { serverUrl },
-					originalError: err instanceof Error ? err : undefined
-				}
-			);
-		}
-
+		this.serverUrl = validateServerUrl(serverUrl);
 		this.apiKey = apiKey;
-		this.serverUrl = serverUrl.replace(/\/+$/, '');
 	}
 
 	/**

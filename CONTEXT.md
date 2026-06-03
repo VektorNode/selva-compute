@@ -115,6 +115,21 @@ named after a concept, it should be the concept named here.
   pinned by the existing `parseMeshBatchObject`/`parseMeshBatch` suites plus new
   direct tests for the previously-untested `parseMeshBatchBlob`.
 
+- **`serverUrl` validated twice, with rules that had drifted** _(fixed)._ The same
+  URL was checked in `GrasshopperClient.normalizeComputeConfig` and again in the
+  `ComputeServerStats` constructor (the client constructs `ComputeServerStats`
+  with the already-validated URL). Neither was a superset: the client rejected the
+  default public endpoint but skipped the `http(s)://` scheme check; the stats
+  constructor checked the scheme but allowed the public endpoint — so a bad URL
+  threw a different message from a different place depending on path, and each
+  validator missed a rule the other had. Extracted one `validateServerUrl` in
+  `core/server/validate-server-url.ts` enforcing the **union** of all rules
+  (non-empty, scheme, parseable, not-public-endpoint, strip trailing slash); both
+  call sites delegate. `ComputeServerStats` is publicly exported and standalone-
+  constructible, so its validation is load-bearing — this unifies, it doesn't
+  remove. Pinned by `core/server/__tests__/validate-server-url.test.ts` (neither
+  validator had any test before).
+
 ## Known follow-ups
 
 - **`scaleFactor` is applied in two places.** `buildMeshesFromParsed` scales meshes
