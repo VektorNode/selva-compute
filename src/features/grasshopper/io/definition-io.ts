@@ -36,7 +36,7 @@ export async function fetchDefinitionIO(
 		);
 	}
 
-	const response = await fetchRhinoCompute<'io'>('io', payload, config);
+	const response = await fetchRhinoCompute<IoResponseSchema>('io', payload, config);
 
 	if (!response || typeof response !== 'object') {
 		throw new RhinoComputeError('Invalid IO response structure', ErrorCodes.INVALID_INPUT, {

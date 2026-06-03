@@ -49,7 +49,7 @@ export async function solveGrasshopperDefinition(
 	const args = prepareGrasshopperArgs(definition, dataTree);
 	applyOptionalComputeSettings(args, config);
 
-	const result = await fetchRhinoCompute('grasshopper', args, config);
+	const result = await fetchRhinoCompute<GrasshopperComputeResponse>('grasshopper', args, config);
 
 	if ('pointer' in result) {
 		// Strip via shallow copy rather than `delete result.pointer` so we don't

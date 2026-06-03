@@ -2,25 +2,6 @@ import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
 
 import type { ComputeConfig, RetryPolicy } from '../types';
-import type {
-	GrasshopperComputeConfig,
-	GrasshopperComputeResponse,
-	IoResponseSchema
-} from '@/features/grasshopper/types';
-
-/**
- * Valid endpoints for Rhino Compute (improved response type handling).
- */
-export type Endpoint = 'grasshopper' | 'io' | string;
-
-export type EndpointResponseMap = {
-	grasshopper: GrasshopperComputeResponse;
-	io: IoResponseSchema;
-};
-
-export type ComputeResponseFor<E extends string> = E extends keyof EndpointResponseMap
-	? EndpointResponseMap[E]
-	: unknown;
 
 // ============================================================================
 // Retry Policy
@@ -349,7 +330,7 @@ interface AttemptContext {
 	fullUrl: string;
 	requestId: string;
 	headers: HeadersInit;
-	config: ComputeConfig | GrasshopperComputeConfig;
+	config: ComputeConfig;
 }
 
 interface AttemptResult {
@@ -540,11 +521,15 @@ async function attemptFetch(
  *
  * Use this for advanced, low-level control over compute requests. For most use cases, prefer higher-level APIs.
  *
- * @typeParam E - The endpoint name (e.g., 'grasshopper', 'io'). Determines the response type for better type safety.
+ * The transport is response-type-agnostic: it does not know which response a
+ * given endpoint returns. Callers supply the response type via `R` (defaulting
+ * to `unknown`, which forces an explicit narrowing before use).
+ *
+ * @typeParam R - The expected response shape. The caller names it at the call site.
  * @param endpoint - The Compute API endpoint (e.g., 'grasshopper', 'io', 'mesh').
  * @param args - Pre-prepared arguments for the request body.
  * @param config - Compute configuration (server URL, API key, timeout, debug, retry, signal).
- * @returns The parsed JSON response from the server, typed according to the endpoint.
+ * @returns The parsed JSON response from the server, typed as `R`.
  *
  * @example
  * // Basic usage for the Grasshopper endpoint:
@@ -560,11 +545,11 @@ async function attemptFetch(
  *   }
  * );
  */
-export async function fetchRhinoCompute<E extends Endpoint>(
-	endpoint: E,
+export async function fetchRhinoCompute<R = unknown>(
+	endpoint: string,
 	args: Record<string, any>,
-	config: ComputeConfig | GrasshopperComputeConfig
-): Promise<ComputeResponseFor<E>> {
+	config: ComputeConfig
+): Promise<R> {
 	const requestId = generateRequestId();
 	const body = JSON.stringify(args);
 	const requestSize = body.length;
@@ -594,7 +579,7 @@ export async function fetchRhinoCompute<E extends Endpoint>(
 	for (let attempt = 0; attempt < totalAttempts; attempt++) {
 		const result = await attemptFetch(ctx, retryPolicy, attempt, totalAttempts);
 
-		if (result.ok) return result.value as ComputeResponseFor<E>;
+		if (result.ok) return result.value as R;
 
 		if (!result.retry) throw result.cause;
 
