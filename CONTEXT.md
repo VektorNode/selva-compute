@@ -84,3 +84,17 @@ named after a concept, it should be the concept named here.
   `Uint8Array` found _inside_ a dataTree (hashed every solve). Pinned by
   `scheduler/__tests__/stable-hash.test.ts` (equal-length and shared-endpoint
   collision regressions).
+
+- **File handling fused decode + fetch; base64 path corrupted content** _(fixed)._
+  `core/files/handle-files.ts`'s `processFiles` did two orthogonal jobs in one
+  body — synchronously decoding the inline `FileData` of a compute response, and
+  asynchronously fetching external `FileBaseInfo` URLs (swallowing per-file
+  failures). Split into `decodeResponseFiles` (pure/sync) and `fetchRemoteFiles`
+  (async, deliberate swallow), composed by a thin `processFiles`; public API
+  unchanged. Adding a real test surface (`core/files/__tests__/handle-files.test.ts`)
+  immediately surfaced a latent bug: the base64 branch wrapped the decoded bytes
+  in `new Uint8Array(bites.buffer)`, discarding the view's `byteOffset`/
+  `byteLength` and exposing the whole (pooled) backing buffer as corrupt content.
+  Now uses the correctly-bounded view `decodeBase64ToBinary` already returns.
+  The remote-fetch swallow (one dead URL degrades, never aborts the batch) is now
+  pinned as intentional.

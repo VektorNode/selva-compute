@@ -49,7 +49,7 @@ export type ProcessedFile = {
  *
  *
  * @see {@link FileData} for files from compute responses
- * @see {@link processFiles} for how FileBaseInfo is processed (fetched and converted)
+ * @see {@link fetchRemoteFiles} for how FileBaseInfo is processed (fetched and converted)
  */
 export type FileBaseInfo = {
 	/** Destination filename for the file in the archive or result set (e.g., "additional-data.json") */
