@@ -186,22 +186,42 @@ describe('input pipeline characterization', () => {
 		});
 	});
 
-	describe('tree-access defaults (QUIRK — see CONTEXT.md)', () => {
+	describe('tree-access defaults', () => {
 		const treeDefault = {
-			innerTree: { '{0}': [{ data: '1.5', type: 'System.Double' }] }
+			innerTree: {
+				'{0}': [
+					{ data: '1.5', type: 'System.Double' },
+					{ data: '2.5', type: 'System.Double' }
+				],
+				'{1}': [{ data: '3.5', type: 'System.Double' }]
+			}
 		};
 
-		it('a tree-access Number default collapses to undefined; step derives from min/max', () => {
+		// Previously a known bug (see git history / docs/audit-2025.md): the numeric
+		// parser collapsed a tree-access default to `undefined`, silently dropping a
+		// tree-access slider's values. Now fixed — the tree is preserved as a
+		// DataTreeDefault for TreeBuilder.fromInputParams to consume.
+		it('preserves a tree-access Number default as a DataTreeDefault', () => {
 			const { input } = processInputWithError(
 				createInputSchema({
 					paramType: 'Number',
 					treeAccess: true,
-					default: treeDefault as any,
-					minimum: 0.01
+					default: treeDefault as any
 				})
 			);
-			expect((input as any).default).toBeUndefined();
-			expect((input as any).stepSize).toBe(0.01);
+			expect((input as any).default).toEqual({ '{0}': [1.5, 2.5], '{1}': [3.5] });
+		});
+
+		it('preserves a tree-access Integer default and uses step size 1', () => {
+			const { input } = processInputWithError(
+				createInputSchema({
+					paramType: 'Integer',
+					treeAccess: true,
+					default: { innerTree: { '{0}': [{ data: '5', type: 'System.Int32' }] } } as any
+				})
+			);
+			expect((input as any).default).toEqual({ '{0}': [5] });
+			expect((input as any).stepSize).toBe(1);
 		});
 
 		it('an empty innerTree collapses the default to undefined', () => {

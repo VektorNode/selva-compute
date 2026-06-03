@@ -45,7 +45,9 @@ describe('numeric parser', () => {
 
 	describe('integer handling', () => {
 		it('should round decimals for Integer type', () => {
-			const result = parseNumeric(createNumericInputSchema({ paramType: 'Integer', default: 42.7 }));
+			const result = parseNumeric(
+				createNumericInputSchema({ paramType: 'Integer', default: 42.7 })
+			);
 			expect(result.default).toBe(43);
 			expect(result.stepSize).toBe(1);
 		});
@@ -64,9 +66,9 @@ describe('numeric parser', () => {
 		});
 
 		it('should use minimum for step when default is 0', () => {
-			expect(
-				parseNumeric(createNumericInputSchema({ default: 0, minimum: 0.01 })).stepSize
-			).toBe(0.01);
+			expect(parseNumeric(createNumericInputSchema({ default: 0, minimum: 0.01 })).stepSize).toBe(
+				0.01
+			);
 		});
 	});
 
@@ -80,7 +82,9 @@ describe('numeric parser', () => {
 		});
 
 		it('should process coordinate lists', () => {
-			const result = parseNumeric(createNumericInputSchema({ default: ['0', '1.5', '3.0', '4.5'] }));
+			const result = parseNumeric(
+				createNumericInputSchema({ default: ['0', '1.5', '3.0', '4.5'] })
+			);
 			expect(result.default).toEqual([0, 1.5, 3.0, 4.5]);
 		});
 	});

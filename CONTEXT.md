@@ -35,17 +35,18 @@ named after a concept, it should be the concept named here.
 
   Pipeline order: a **shared** `normalizeDefault` step flattens the raw
   `innerTree` default (flat-vs-tree decided by `treeAccess` / `atMost`,
-  independent of type) and runs *before* type dispatch. Then the parser for the
+  independent of type) and runs _before_ type dispatch. Then the parser for the
   canonical type produces the typed param. Parse failure is caught at the
   registry boundary and paired with the parser's own fallback param.
 
-## Known-suspicious behavior (do not "fix" without a decision)
+## Resolved issues
 
-- **Tree-shaped defaults reaching scalar parsers.** When an input is
-  tree-access (`treeAccess: true` or `atMost > 1`), `normalizeDefault` preserves
-  the default as a tree object. The type parsers were written assuming a
-  scalar-or-array default, so a tree-shaped default currently collapses to
-  `undefined` for `Number` (step size then derives from min/max) and passes
-  through untouched for other types. This is the *current shipped behavior* and
-  is pinned by characterization tests. It may be a latent bug; if so, fix it in a
-  dedicated change, not folded into an unrelated refactor.
+- **Tree-shaped defaults reaching scalar parsers** _(fixed)._ For a tree-access
+  input (`treeAccess: true` or `atMost > 1`), `normalizeDefault` keeps the
+  default as a `DataTreeDefault` (object keyed by branch paths like `{0}`).
+  `TreeBuilder.fromInputParams` reads exactly that shape. The numeric parser used
+  to run scalar coercion over the tree object and silently collapse it to
+  `undefined` — dropping a tree-access slider's default. The numeric parser now
+  detects a tree-shaped default (`isTreeShapedDefault`) and passes it through
+  untouched; the other scalar parsers already preserved it. Pinned by the
+  `tree-access defaults` block in `process-inputs.characterization.test.ts`.

@@ -45,9 +45,9 @@ describe('boolean parser', () => {
 
 	describe('real-world scenarios', () => {
 		it('should process Grasshopper toggle', () => {
-			expect(parseBoolean(createBooleanInputSchema({ name: 'Toggle', default: 'false' })).default).toBe(
-				false
-			);
+			expect(
+				parseBoolean(createBooleanInputSchema({ name: 'Toggle', default: 'false' })).default
+			).toBe(false);
 		});
 
 		it('should process boolean lists for conditional logic', () => {

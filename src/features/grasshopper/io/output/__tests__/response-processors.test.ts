@@ -92,7 +92,11 @@ describe('getValues — parseValues / JSON decoding', () => {
 describe('getValues — aggregation and keys', () => {
 	it('aggregates multiple items under one ParamName into an array', () => {
 		const res = response(
-			param('nums', [item('System.Int32', '1'), item('System.Int32', '2'), item('System.Int32', '3')])
+			param('nums', [
+				item('System.Int32', '1'),
+				item('System.Int32', '2'),
+				item('System.Int32', '3')
+			])
 		);
 		expect(getValues(res).values.nums).toEqual([1, 2, 3]);
 	});
@@ -182,9 +186,7 @@ describe('extractFileData', () => {
 	});
 
 	it('ignores FileData items that fail the shape guard', () => {
-		const res = response(
-			param('files', [item('FileData', JSON.stringify({ fileName: 'x' }))])
-		);
+		const res = response(param('files', [item('FileData', JSON.stringify({ fileName: 'x' }))]));
 		expect(extractFileData(res)).toEqual([]);
 	});
 

@@ -198,12 +198,15 @@ describe('fetchRhinoCompute — retry', () => {
 	it('honors a Retry-After header on a retried 429', async () => {
 		fetchMock
 			.mockResolvedValueOnce(
-				createMockResponse({}, {
-					ok: false,
-					status: 429,
-					statusText: 'Too Many Requests',
-					headers: { 'Retry-After': '5' }
-				})
+				createMockResponse(
+					{},
+					{
+						ok: false,
+						status: 429,
+						statusText: 'Too Many Requests',
+						headers: { 'Retry-After': '5' }
+					}
+				)
 			)
 			.mockResolvedValueOnce(createMockResponse({ ok: 'after-wait' }));
 
@@ -222,10 +225,14 @@ describe('fetchRhinoCompute — retry', () => {
 		fetchMock.mockResolvedValue(
 			createMockResponse({}, { ok: false, status: 429, statusText: 'Too Many Requests' })
 		);
-		const promise = fetchRhinoCompute('grasshopper', {}, {
-			...config,
-			retry: { attempts: 2, baseDelayMs: 100, maxDelayMs: 100, retryOn429: false }
-		});
+		const promise = fetchRhinoCompute(
+			'grasshopper',
+			{},
+			{
+				...config,
+				retry: { attempts: 2, baseDelayMs: 100, maxDelayMs: 100, retryOn429: false }
+			}
+		);
 		await expect(promise).rejects.toMatchObject({ code: 'NETWORK_ERROR', statusCode: 429 });
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
@@ -244,11 +251,15 @@ describe('fetchRhinoCompute — abort and timeout', () => {
 		});
 
 		await expect(
-			fetchRhinoCompute('grasshopper', {}, {
-				...config,
-				signal: controller.signal,
-				retry: { attempts: 3, baseDelayMs: 1, maxDelayMs: 1 }
-			})
+			fetchRhinoCompute(
+				'grasshopper',
+				{},
+				{
+					...config,
+					signal: controller.signal,
+					retry: { attempts: 3, baseDelayMs: 1, maxDelayMs: 1 }
+				}
+			)
 		).rejects.toThrow(/aborted by caller/i);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
@@ -259,11 +270,15 @@ describe('fetchRhinoCompute — abort and timeout', () => {
 			// fetch rejects with a non-caller TimeoutError each attempt.
 			fetchMock.mockRejectedValue(new DOMException('The operation timed out', 'TimeoutError'));
 
-			const promise = fetchRhinoCompute('grasshopper', {}, {
-				...config,
-				timeoutMs: 1000,
-				retry: { attempts: 1, baseDelayMs: 100, maxDelayMs: 100 }
-			});
+			const promise = fetchRhinoCompute(
+				'grasshopper',
+				{},
+				{
+					...config,
+					timeoutMs: 1000,
+					retry: { attempts: 1, baseDelayMs: 100, maxDelayMs: 100 }
+				}
+			);
 			const assertion = expect(promise).rejects.toMatchObject({ code: 'TIMEOUT_ERROR' });
 			await vi.advanceTimersByTimeAsync(500);
 			await assertion;

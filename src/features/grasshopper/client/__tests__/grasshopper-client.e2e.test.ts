@@ -51,7 +51,11 @@ describe('GrasshopperClient.create', () => {
 
 describe('GrasshopperClient.solve (e2e through transport)', () => {
 	it('sends the data tree and returns the parsed compute response', async () => {
-		const computeResponse = { values: [{ ParamName: 'out', InnerTree: {} }], errors: [], warnings: [] };
+		const computeResponse = {
+			values: [{ ParamName: 'out', InnerTree: {} }],
+			errors: [],
+			warnings: []
+		};
 		route({
 			'/healthcheck': onlineServer,
 			'/grasshopper': () => createMockResponse(computeResponse)
@@ -85,7 +89,11 @@ describe('GrasshopperClient.solve (e2e through transport)', () => {
 	});
 
 	it('surfaces a partial-success response (values + errors) as COMPUTATION_ERROR', async () => {
-		const partial = { values: [{ ParamName: 'out' }], errors: ['Solve exception: bad'], warnings: [] };
+		const partial = {
+			values: [{ ParamName: 'out' }],
+			errors: ['Solve exception: bad'],
+			warnings: []
+		};
 		route({
 			'/healthcheck': onlineServer,
 			'/grasshopper': () =>

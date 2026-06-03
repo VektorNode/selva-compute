@@ -36,7 +36,9 @@ describe('text parser', () => {
 
 	describe('array handling', () => {
 		it('should process arrays of quoted strings', () => {
-			const result = parseText(createTextInputSchema({ default: ['"Hello"', '"World"', '"Test"'] }));
+			const result = parseText(
+				createTextInputSchema({ default: ['"Hello"', '"World"', '"Test"'] })
+			);
 			expect(result.default).toEqual(['Hello', 'World', 'Test']);
 		});
 

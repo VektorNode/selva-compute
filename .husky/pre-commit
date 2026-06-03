@@ -1,0 +1,29 @@
+# GUI git clients (VSCode, etc.) run hooks with a minimal PATH that omits
+# version-manager bin dirs, so `pnpm`/`node` may not be found. Load common
+# locations so the hook works regardless of how the user installed Node.
+
+# nvm: add the newest installed node bin to PATH (avoids a slow `nvm use`).
+# Globs are unsorted, so pick the last match, which sorts highest lexically.
+if [ -d "$HOME/.nvm/versions/node" ]; then
+	for d in "$HOME"/.nvm/versions/node/v*/bin; do
+		[ -d "$d" ] && nvm_bin="$d"
+	done
+	[ -n "${nvm_bin:-}" ] && PATH="$nvm_bin:$PATH"
+fi
+
+# fnm / volta / standalone pnpm install locations
+[ -d "$HOME/.fnm" ] && PATH="$HOME/.fnm:$PATH"
+[ -d "$HOME/.volta/bin" ] && PATH="$HOME/.volta/bin:$PATH"
+[ -d "$HOME/Library/pnpm/bin" ] && PATH="$HOME/Library/pnpm/bin:$PATH"
+[ -d "$HOME/Library/pnpm" ] && PATH="$HOME/Library/pnpm:$PATH"
+[ -d "$HOME/.local/share/pnpm" ] && PATH="$HOME/.local/share/pnpm:$PATH"
+export PATH
+
+if ! command -v pnpm >/dev/null 2>&1; then
+	echo "husky/pre-commit: pnpm not found on PATH." >&2
+	echo "  If you use a Node version manager, ensure its shims are on PATH," >&2
+	echo "  or enable corepack: 'corepack enable'." >&2
+	exit 1
+fi
+
+pnpm exec lint-staged

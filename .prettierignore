@@ -1,5 +1,8 @@
 node_modules
 dist
+coverage
+docs/api
+examples
 pnpm-lock.yaml
 .changeset
 CHANGELOG.md

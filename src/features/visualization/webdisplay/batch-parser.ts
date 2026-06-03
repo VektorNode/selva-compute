@@ -220,12 +220,7 @@ function buildMeshesFromParsed(
 	// Z-up -> Y-up rotation, when requested, is folded into the same pass.
 	const worldVertices = isFloat32
 		? maybeRotateFloat32Vertices(parsed.vertices as Float32Array, applyTransforms)
-		: dequantizeInt16(
-				parsed.vertices as Int16Array,
-				parsed.origin,
-				parsed.scale,
-				applyTransforms
-			);
+		: dequantizeInt16(parsed.vertices as Int16Array, parsed.origin, parsed.scale, applyTransforms);
 
 	if (debug) {
 		const wireBytes = parsed.vertices.byteLength + parsed.indices.byteLength;

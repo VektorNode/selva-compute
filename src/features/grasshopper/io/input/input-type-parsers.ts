@@ -47,6 +47,18 @@ type ValueTransformer<T> = (value: unknown) => T | null;
  * transform-or-(undefined|preserve). Returns the new default value rather than
  * mutating.
  */
+/**
+ * A tree-access input's default is a `DataTreeDefault` — an object keyed by
+ * branch paths like `{0}` / `{0;1}`, already normalized by `normalizeDefault`.
+ * It must reach `TreeBuilder.fromInputParams` intact, so the scalar transformers
+ * (which only understand scalar/array defaults) must pass it through untouched.
+ */
+function isTreeShapedDefault(value: unknown): boolean {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const keys = Object.keys(value as Record<string, unknown>);
+	return keys.length > 0 && keys.every((k) => /^\{.*\}$/.test(k));
+}
+
 function coerceDefault<T>(
 	value: unknown,
 	transform: ValueTransformer<T>,
@@ -191,6 +203,17 @@ function computeNumeric(
 ): { default: NumericInputType['default']; stepSize: number } {
 	const isIntegerType = schema.paramType === 'Integer';
 
+	// A tree-access default is a DataTreeDefault keyed by branch paths; pass it
+	// through untouched (numeric constraints are applied later by TreeBuilder).
+	// Without this guard the scalar numericTransformer mangles the tree object to
+	// `undefined`, silently dropping a tree-access slider's default.
+	if (isTreeShapedDefault(schema.default)) {
+		return {
+			default: schema.default as NumericInputType['default'],
+			stepSize: isIntegerType ? 1 : 0.1
+		};
+	}
+
 	let value = coerceDefault(schema.default, numericTransformer, true);
 
 	if (isIntegerType) {
@@ -221,8 +244,7 @@ function computeNumeric(
 		stepSource = schema.maximum;
 	}
 
-	const stepSize =
-		stepSource !== undefined ? getInputStepSize(stepSource, roundingTolerance) : 0.1;
+	const stepSize = stepSource !== undefined ? getInputStepSize(stepSource, roundingTolerance) : 0.1;
 
 	// Apply precision to all numeric values
 	let decimalPlaces = 0;
@@ -366,7 +388,11 @@ const valueListParser: InputTypeParser<ValueListInputType> = {
 const geometryParser: InputTypeParser<GeometryInputType> = {
 	types: ['Geometry'],
 	parse(schema, base) {
-		const value = coerceDefault(schema.default, objectTransformer(schema.nickname || 'unnamed'), true);
+		const value = coerceDefault(
+			schema.default,
+			objectTransformer(schema.nickname || 'unnamed'),
+			true
+		);
 		return {
 			...base,
 			paramType: 'Geometry',
@@ -382,7 +408,11 @@ const geometryParser: InputTypeParser<GeometryInputType> = {
 const fileParser: InputTypeParser<FileInputType> = {
 	types: ['File'],
 	parse(schema, base) {
-		const value = coerceDefault(schema.default, objectTransformer(schema.nickname || 'unnamed'), true);
+		const value = coerceDefault(
+			schema.default,
+			objectTransformer(schema.nickname || 'unnamed'),
+			true
+		);
 		return {
 			...base,
 			paramType: 'File',

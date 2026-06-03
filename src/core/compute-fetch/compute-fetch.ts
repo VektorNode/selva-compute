@@ -105,9 +105,7 @@ function throwHttpError(
 	});
 
 	const trimmed = errorBody.trim();
-	const bodyHint = trimmed
-		? ` — ${trimmed.slice(0, 200)}${trimmed.length > 200 ? '…' : ''}`
-		: '';
+	const bodyHint = trimmed ? ` — ${trimmed.slice(0, 200)}${trimmed.length > 200 ? '…' : ''}` : '';
 
 	const context = {
 		url: fullUrl,
@@ -129,9 +127,18 @@ function throwHttpError(
 		},
 		429: { message: `Rate limit exceeded${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
 		500: { message: `Server error: ${statusText}${bodyHint}`, code: ErrorCodes.COMPUTATION_ERROR },
-		502: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
-		503: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
-		504: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR }
+		502: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		},
+		503: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		},
+		504: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		}
 	};
 
 	const error = errorMap[status] || {

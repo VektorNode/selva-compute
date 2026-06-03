@@ -49,15 +49,15 @@ Raw API Response (PascalCase, inconsistent types)
 Each parser declares the canonical `paramType`(s) it owns via its `types` field
 and is registered in `INPUT_TYPE_PARSERS`:
 
-| Parser           | `types`               | Output Type                       |
-| ---------------- | --------------------- | --------------------------------- |
-| `numericParser`  | `Number`, `Integer`   | `NumericInputType`                |
-| `textParser`     | `Text`                | `TextInputType`                   |
-| `booleanParser`  | `Boolean`             | `BooleanInputType`                |
-| `valueListParser`| `ValueList`           | `ValueListInputType`              |
-| `geometryParser` | `Geometry`            | `GeometryInputType`               |
-| `fileParser`     | `File`                | `FileInputType`                   |
-| `colorParser`    | `Color`               | `ColorInputType`                  |
+| Parser            | `types`             | Output Type          |
+| ----------------- | ------------------- | -------------------- |
+| `numericParser`   | `Number`, `Integer` | `NumericInputType`   |
+| `textParser`      | `Text`              | `TextInputType`      |
+| `booleanParser`   | `Boolean`           | `BooleanInputType`   |
+| `valueListParser` | `ValueList`         | `ValueListInputType` |
+| `geometryParser`  | `Geometry`          | `GeometryInputType`  |
+| `fileParser`      | `File`              | `FileInputType`      |
+| `colorParser`     | `Color`             | `ColorInputType`     |
 
 ## How It Works
 
@@ -86,15 +86,28 @@ const numericParser: InputTypeParser<NumericInputType> = {
 	types: ['Number', 'Integer'],
 	parse(schema, base) {
 		const { default: def, stepSize } = computeNumeric(schema);
-		return { ...base, paramType: schema.paramType as 'Number' | 'Integer',
-			minimum: schema.minimum, maximum: schema.maximum,
-			atLeast: schema.atLeast, atMost: schema.atMost, stepSize, default: def };
+		return {
+			...base,
+			paramType: schema.paramType as 'Number' | 'Integer',
+			minimum: schema.minimum,
+			maximum: schema.maximum,
+			atLeast: schema.atLeast,
+			atMost: schema.atMost,
+			stepSize,
+			default: def
+		};
 	},
 	fallback(schema, base) {
 		const isList = (schema.atMost ?? 1) > 1;
-		return { ...base, paramType: schema.paramType as 'Number' | 'Integer',
-			minimum: schema.minimum, maximum: schema.maximum,
-			atLeast: schema.atLeast, atMost: schema.atMost, default: isList ? [0] : 0 };
+		return {
+			...base,
+			paramType: schema.paramType as 'Number' | 'Integer',
+			minimum: schema.minimum,
+			maximum: schema.maximum,
+			atLeast: schema.atLeast,
+			atMost: schema.atMost,
+			default: isList ? [0] : 0
+		};
 	}
 };
 ```
@@ -148,13 +161,21 @@ const customParser: InputTypeParser<CustomInputType> = {
 	types: ['Custom'],
 	parse(schema, base) {
 		const value = coerceDefault(schema.default, customTransformer, true);
-		return { ...base, paramType: 'Custom', customProperty: schema.customProperty ?? 'default',
-			default: value as CustomInputType['default'] };
+		return {
+			...base,
+			paramType: 'Custom',
+			customProperty: schema.customProperty ?? 'default',
+			default: value as CustomInputType['default']
+		};
 	},
 	fallback(schema, base) {
 		const isList = (schema.atMost ?? 1) > 1;
-		return { ...base, paramType: 'Custom', customProperty: 'default',
-			default: isList ? [null] : null };
+		return {
+			...base,
+			paramType: 'Custom',
+			customProperty: 'default',
+			default: isList ? [null] : null
+		};
 	}
 };
 ```

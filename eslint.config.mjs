@@ -35,7 +35,15 @@ export const config = [
 		}
 	},
 	{
-		ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/']
+		ignores: [
+			'build/',
+			'.svelte-kit/',
+			'dist/',
+			'node_modules/',
+			'docs/api/',
+			'coverage/',
+			'examples/'
+		]
 	},
 	{
 		rules: {
