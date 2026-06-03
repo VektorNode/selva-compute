@@ -6,7 +6,22 @@ import { getLogger } from '@/core';
 import { FLAG_FLOAT32, parseBinaryMeshBatch } from './binary-parser';
 
 import type { ParsedBinaryMeshBatch } from './binary-parser';
-import type { MeshBatch, MaterialGroup, SerializableMaterial } from './types';
+import type {
+	MeshBatch,
+	MaterialGroup,
+	MeshBatchParsingOptions,
+	SerializableMaterial
+} from './types';
+
+/**
+ * Internal-only telemetry threaded from an outer entry point (e.g. the JSON
+ * `parseMeshBatch` measuring its own `JSON.parse` cost) into the shared build
+ * step. Never part of any public options surface — callers don't supply timings.
+ */
+interface ParseTelemetry {
+	parseTime?: number;
+	perfStart?: number;
+}
 
 /**
  * Parses a batched mesh JSON and creates Three.js meshes.
@@ -21,32 +36,18 @@ import type { MeshBatch, MaterialGroup, SerializableMaterial } from './types';
  */
 export async function parseMeshBatch(
 	batchJson: string,
-	options?: {
-		/** Merge meshes with same material into single geometry*/
-		mergeByMaterial?: boolean;
-		/** Apply coordinate system transformations */
-		applyTransforms?: boolean;
-		/** Enable performance monitoring */
-		debug?: boolean;
-	}
+	options?: MeshBatchParsingOptions
 ): Promise<THREE.Mesh[]> {
-	const { mergeByMaterial = true, applyTransforms = true, debug = false } = options ?? {};
+	const { debug = false } = options ?? {};
 
 	const perfStart = debug ? performance.now() : 0;
-	let parseTime = 0;
 
 	try {
 		const parseStart = performance.now();
 		const batch: MeshBatch = JSON.parse(batchJson);
-		parseTime = performance.now() - parseStart;
+		const parseTime = performance.now() - parseStart;
 
-		return await parseMeshBatchObject(batch, {
-			mergeByMaterial,
-			applyTransforms,
-			debug,
-			parseTime,
-			perfStart
-		});
+		return await parseMeshBatchObject(batch, options, { parseTime, perfStart });
 	} catch (error) {
 		getLogger().error('Error parsing mesh batch:', error);
 		return [];
@@ -66,29 +67,20 @@ export async function parseMeshBatch(
  */
 export async function parseMeshBatchObject(
 	batch: MeshBatch,
-	options?: {
-		/** Merge meshes with same material into single geometry*/
-		mergeByMaterial?: boolean;
-		/** Apply coordinate system transformations */
-		applyTransforms?: boolean;
+	options?: MeshBatchParsingOptions & {
 		/** Scale factor to apply to meshes (e.g., for unit conversion) */
 		scaleFactor?: number;
-		/** Enable performance monitoring */
-		debug?: boolean;
-		/** Parse time (optional, for debugging) */
-		parseTime?: number;
-		/** Performance start time (optional, for debugging) */
-		perfStart?: number;
-	}
+	},
+	/** @internal Timings threaded from an outer entry point; not a caller option. */
+	telemetry?: ParseTelemetry
 ): Promise<THREE.Mesh[]> {
 	const {
 		mergeByMaterial = true,
 		applyTransforms = true,
 		scaleFactor = 1,
-		debug = false,
-		parseTime = 0,
-		perfStart = debug ? performance.now() : 0
+		debug = false
 	} = options ?? {};
+	const { parseTime = 0, perfStart = debug ? performance.now() : 0 } = telemetry ?? {};
 
 	try {
 		const decodeStart = performance.now();
@@ -132,15 +124,9 @@ export async function parseMeshBatchObject(
  */
 export async function parseMeshBatchBlob(
 	blob: ArrayBuffer | Uint8Array,
-	options?: {
-		/** Merge meshes with same material into single geometry */
-		mergeByMaterial?: boolean;
-		/** Apply coordinate system transformations */
-		applyTransforms?: boolean;
+	options?: MeshBatchParsingOptions & {
 		/** Scale factor to apply to meshes (e.g., for unit conversion) */
 		scaleFactor?: number;
-		/** Enable performance monitoring */
-		debug?: boolean;
 	}
 ): Promise<THREE.Mesh[]> {
 	const {
@@ -157,7 +143,7 @@ export async function parseMeshBatchBlob(
 		const parsed = parseBinaryMeshBatch(blob);
 		const decodeTime = performance.now() - decodeStart;
 
-		const blobBytes = blob instanceof Uint8Array ? blob.byteLength : blob.byteLength;
+		const blobBytes = blob.byteLength;
 
 		return buildMeshesFromParsed(parsed, {
 			mergeByMaterial,

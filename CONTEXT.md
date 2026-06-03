@@ -32,7 +32,12 @@ named after a concept, it should be the concept named here.
 - **Decoder** — turns a typed value (system type or Rhino geometry) into a JS
   value. Rhino geometry decoding uses a registry (`registerDecoder`).
 - **Mesh batch** — the binary (SLVA) payload carrying display meshes; parsed by
-  the webdisplay layer into three.js meshes.
+  the webdisplay layer into three.js meshes. Three entry points decode it —
+  `parseMeshBatch` (JSON envelope), `parseMeshBatchObject` (parsed `MeshBatch`),
+  `parseMeshBatchBlob` (raw binary frame) — and all share the one public options
+  type `MeshBatchParsingOptions` (`mergeByMaterial` / `applyTransforms` / `debug`).
+  Telemetry timings and the envelope `fallback` merge are private to the build
+  step (`BuildOptions`), never on a caller-facing surface.
 
 ## Seams
 
@@ -98,3 +103,25 @@ named after a concept, it should be the concept named here.
   Now uses the correctly-bounded view `decodeBase64ToBinary` already returns.
   The remote-fetch swallow (one dead URL degrades, never aborts the batch) is now
   pinned as intentional.
+
+- **Mesh batch entry points had drifting, leaky options** _(fixed)._ The three
+  `parseMeshBatch*` functions each inlined their own options literal, drifting
+  apart (`parseMeshBatchObject` even exposed internal `parseTime`/`perfStart`
+  timings as public options), while the real contract hid in the private
+  `BuildOptions`. Unified all three on the existing public `MeshBatchParsingOptions`;
+  the two that historically also took `scaleFactor` keep it via
+  `MeshBatchParsingOptions & { scaleFactor? }`; timings now thread through a
+  private `ParseTelemetry` arg, never a caller surface. Behavior-preserving —
+  pinned by the existing `parseMeshBatchObject`/`parseMeshBatch` suites plus new
+  direct tests for the previously-untested `parseMeshBatchBlob`.
+
+## Known follow-ups
+
+- **`scaleFactor` is applied in two places.** `buildMeshesFromParsed` scales meshes
+  when `scaleFactor !== 1` (used by `parseMeshBatchObject`/`Blob`), _and_ the
+  webdisplay orchestrator re-scales the returned meshes itself
+  (`webdisplay-parser.ts`, from `modelunits`). The real extraction path goes
+  through the orchestrator, so the in-parser `scaleFactor` is effectively dead
+  there — but a caller using `parseMeshBatchObject` directly _and_ the orchestrator
+  would double-scale. Deferred: pick one scaling home (likely the orchestrator,
+  which owns unit→scale) and remove the other.

@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { buildMeshBatch, encodeBatchPayload } from '@tests/helpers/mesh-batch-builder';
+import { decodeBase64ToBinary } from '@/core/utils/encoding';
 
-import { parseMeshBatch, parseMeshBatchObject } from '../batch-parser';
+import { parseMeshBatch, parseMeshBatchObject, parseMeshBatchBlob } from '../batch-parser';
 
 const COORD_TRANSFORM_TOLERANCE = 1e-5;
 
@@ -299,5 +300,37 @@ describe('parseMeshBatch (JSON entry point)', () => {
 	it('returns empty array on invalid JSON instead of throwing', async () => {
 		const meshes = await parseMeshBatch('not-json', { applyTransforms: false });
 		expect(meshes).toEqual([]);
+	});
+});
+
+describe('parseMeshBatchBlob (binary entry point)', () => {
+	// The blob entry point takes the raw SLVA bytes (a binary WebSocket frame) and
+	// reads materials/groups/sourceComponentId from the blob's embedded metadata
+	// rather than an outer JSON envelope.
+	it('parses raw blob bytes end-to-end, honoring the shared parsing options', async () => {
+		const { batch } = buildMeshBatch({ materialCount: 2, meshCount: 6, vertsPerMesh: 4 });
+		const blob = decodeBase64ToBinary(batch.compressedData);
+
+		const meshes = await parseMeshBatchBlob(blob, {
+			mergeByMaterial: true,
+			applyTransforms: false
+		});
+
+		expect(meshes).toHaveLength(2);
+	});
+
+	it('applies scaleFactor uniformly', async () => {
+		const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
+		const blob = decodeBase64ToBinary(batch.compressedData);
+
+		const meshes = await parseMeshBatchBlob(blob, {
+			mergeByMaterial: true,
+			applyTransforms: false,
+			scaleFactor: 2.5
+		});
+
+		for (const mesh of meshes) {
+			expect(mesh.scale.x).toBe(2.5);
+		}
 	});
 });
