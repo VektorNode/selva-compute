@@ -130,6 +130,22 @@ named after a concept, it should be the concept named here.
   remove. Pinned by `core/server/__tests__/validate-server-url.test.ts` (neither
   validator had any test before).
 
+- **Scheduler settle-once guard was hand-rolled at every settle site** _(fixed)._
+  A solve promise can be settled from four concurrent sources — the executor
+  resolving, the executor rejecting, `supersede`, and `cancelAll` — and a JS
+  promise silently ignores a second settle, so the `item.settled` flag is
+  load-bearing: it stops a late executor success from firing `onSettle` twice and
+  clobbering `_lastResult`/`_lastError` out of order after a supersede/cancel. The
+  flag itself is **deep and correct** (an architecture review had mis-flagged the
+  "checked in 4 places" as accidental complexity — it's concurrency correctness,
+  not shallowness). The legibility risk was that each site re-implemented the
+  `if (settled) {...}` dance by hand, so a future fifth settle path could forget
+  the guard. Centralized into `settleError` / `settleSuccess` private helpers that
+  own the settle-once invariant and return whether they won (so callers fire their
+  hook only on the winning settle). Behavior-preserving — pinned by the existing
+  21-test scheduler suite (supersede-then-late-rejection, `cancelAll`). Any new
+  settle path must go through these helpers.
+
 ## Known follow-ups
 
 - **`scaleFactor` is applied in two places.** `buildMeshesFromParsed` scales meshes

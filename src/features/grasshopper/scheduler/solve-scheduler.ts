@@ -289,9 +289,7 @@ export class SolveScheduler {
 
 			// External signal cancellation — reject immediately if already aborted
 			if (item.externalSignal?.aborted) {
-				const abortErr = this.makeAbortError(ctx);
-				item.settled = { error: abortErr };
-				reject(abortErr);
+				this.settleError(item, this.makeAbortError(ctx));
 				return;
 			}
 
@@ -362,17 +360,13 @@ export class SolveScheduler {
 
 			if (this.cacheEnabled) this.writeCache(item.ctx.key, response);
 
-			if (item.settled) {
-				// Already superseded mid-flight — drop the late success silently.
-				return;
-			}
-			item.settled = { ok: true };
+			// Already superseded mid-flight — drop the late success silently.
+			if (!this.settleSuccess(item, response)) return;
 
 			this._lastResult = response;
 			this._lastError = null;
 			this._lastDurationMs = durationMs;
 
-			item.resolve(response);
 			this.runHook(this.onSettle, item.ctx, {
 				status: 'success',
 				response,
@@ -381,15 +375,15 @@ export class SolveScheduler {
 			});
 		} catch (error) {
 			const durationMs = performance.now() - startTime;
+			// Resolve the error against the (possibly already-settled) item *before*
+			// settling: if this was superseded mid-flight, normalizeExecutionError
+			// returns the original cause, and _lastError must reflect it either way.
 			const err = this.normalizeExecutionError(error, inflight);
-			const alreadySettled = !!inflight.settled;
 
 			this._lastError = err;
 			this._lastDurationMs = durationMs;
 
-			if (!alreadySettled) {
-				inflight.settled = { error: err };
-				item.reject(err);
+			if (this.settleError(item, err)) {
 				this.runHook(this.onSettle, item.ctx, { status: 'error', error: err, durationMs });
 			}
 		} finally {
@@ -421,19 +415,51 @@ export class SolveScheduler {
 	}
 
 	private supersede(item: PendingItem): void {
-		if (item.settled) return;
 		const err = new RhinoComputeError('Superseded by newer solve', ErrorCodes.SUPERSEDED, {
 			context: { key: item.ctx.key, enqueuedAt: item.ctx.enqueuedAt }
 		});
-		item.settled = { error: err };
-		item.reject(err);
-		this.runHook(this.onSuperseded, item.ctx);
+		if (this.settleError(item, err)) {
+			this.runHook(this.onSuperseded, item.ctx);
+		}
 	}
 
 	private makeAbortError(ctx: SolveContext): RhinoComputeError {
 		return new RhinoComputeError('Request aborted by caller', ErrorCodes.ABORTED, {
 			context: { key: ctx.key, enqueuedAt: ctx.enqueuedAt }
 		});
+	}
+
+	/**
+	 * Settle a pending/in-flight item exactly once with an error.
+	 *
+	 * A solve promise can be settled from four concurrent sources — the executor
+	 * resolving, the executor rejecting, `supersede`, and `cancelAll` — and a JS
+	 * promise silently ignores a second settle. This guard is the single place the
+	 * settle-once invariant lives: it makes the *first* settle win and reports
+	 * whether this call was that winner, so callers fire their own hook only when
+	 * they actually settled. Any new settle path must go through here (or
+	 * {@link settleSuccess}) so the guard can't be forgotten.
+	 *
+	 * @returns `true` if this call settled the item; `false` if it was already settled.
+	 */
+	private settleError(item: PendingItem, err: RhinoComputeError): boolean {
+		if (item.settled) return false;
+		item.settled = { error: err };
+		item.reject(err);
+		return true;
+	}
+
+	/**
+	 * Settle a pending/in-flight item exactly once with a successful response.
+	 * The success counterpart to {@link settleError}; see it for the invariant.
+	 *
+	 * @returns `true` if this call settled the item; `false` if it was already settled.
+	 */
+	private settleSuccess(item: PendingItem, response: GrasshopperComputeResponse): boolean {
+		if (item.settled) return false;
+		item.settled = { ok: true };
+		item.resolve(response);
+		return true;
 	}
 
 	private isAbortLikeError(error: unknown): boolean {
@@ -483,10 +509,8 @@ export class SolveScheduler {
 		}
 		// Abort in-flight — their finally blocks will reject their promises
 		for (const inflight of this.inFlight) {
-			if (!inflight.settled) {
-				const err = this.makeAbortError(inflight.ctx);
-				inflight.settled = { error: err };
-				inflight.reject(err);
+			const err = this.makeAbortError(inflight.ctx);
+			if (this.settleError(inflight, err)) {
 				this.runHook(this.onSettle, inflight.ctx, {
 					status: 'error',
 					error: err,
@@ -499,10 +523,7 @@ export class SolveScheduler {
 	}
 
 	private rejectAsAborted(item: PendingItem): void {
-		if (item.settled) return;
-		const err = this.makeAbortError(item.ctx);
-		item.settled = { error: err };
-		item.reject(err);
+		this.settleError(item, this.makeAbortError(item.ctx));
 	}
 
 	// --------------------------------------------------------------------------
