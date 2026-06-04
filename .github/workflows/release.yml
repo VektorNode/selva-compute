@@ -31,6 +31,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
 
+      # OIDC trusted publishing requires npm >= 11.5.1; the npm bundled with
+      # the Node version here is too old to perform the OIDC token exchange.
+      - name: Upgrade npm for OIDC publishing
+        run: npm install -g npm@latest
+
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
@@ -50,4 +55,6 @@ jobs:
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ !secrets.NPM_TOKEN && 'oidc' || secrets.NPM_TOKEN }}
+          # No NPM_TOKEN: publishing authenticates via npm OIDC trusted publishing
+          # (id-token: write above). Setting NPM_TOKEN would write an auth token to
+          # .npmrc and suppress the OIDC exchange.
