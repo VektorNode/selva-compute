@@ -5,7 +5,7 @@
     "@selvajs/compute": "1.5.3"
   },
   "changesets": [
-    "guard-io-inputs",
+    "io-casing-tolerance",
     "wire-casing-robustness"
   ]
 }
