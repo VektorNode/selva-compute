@@ -12,8 +12,8 @@ importers:
         specifier: ^0.8.2
         version: 0.8.2
       rhino3dm:
-        specifier: 8.9.0
-        version: 8.9.0
+        specifier: 8.17.0
+        version: 8.17.0
     devDependencies:
       '@changesets/cli':
         specifier: ^2.30.0
@@ -1885,8 +1885,8 @@ packages:
   rfdc@1.4.1:
     resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
 
-  rhino3dm@8.9.0:
-    resolution: {integrity: sha512-Lvb6kqxTKkBMY9QTbHxsDhlsWgtDv6VUAlaQDMMAAysFXwesrgDbdZ0v9vux8XN0onPAohoioy3aPlJMmCR+dw==}
+  rhino3dm@8.17.0:
+    resolution: {integrity: sha512-6m3nE/DUwu8vgc4Y7ffmLvV+WvUgjGYAf68q5WAn/CJZvboAPRlU6wTM7PpPU+wxiKfyfkOKKEkXVyPGIQyGeg==}
 
   rolldown@1.0.3:
     resolution: {integrity: sha512-i00lAJ2ks1BYr7rjNjKC7BcqAS7nVfiT3QX1SI5aY+AFHblCmaUf9OE9dbdzDvW6dJxbi2ZCZiy9v3CcwOiX3g==}
@@ -3970,7 +3970,7 @@ snapshots:
 
   rfdc@1.4.1: {}
 
-  rhino3dm@8.9.0: {}
+  rhino3dm@8.17.0: {}
 
   rolldown@1.0.3:
     dependencies:
