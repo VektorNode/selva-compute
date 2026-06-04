@@ -65,6 +65,31 @@ describe('fetchDefinitionIO load diagnostics', () => {
 	});
 });
 
+describe('fetchDefinitionIO guards malformed inputs/outputs', () => {
+	// A server fault can return a 200 whose body omits inputs/outputs (e.g. a
+	// definition-LOAD failure surfacing as malformed-success). The downstream
+	// for...of must not throw "inputs is not iterable".
+	it.each([
+		['missing', { inputs: undefined, outputs: undefined }],
+		['null', { inputs: null, outputs: null }],
+		['non-array object', { inputs: {}, outputs: {} }],
+		['string', { inputs: 'oops', outputs: 'oops' }]
+	])('coerces %s inputs/outputs to []', async (_label, over) => {
+		fetchMock.mockResolvedValue(createMockResponse(ioResponse(over)));
+
+		const res = await fetchDefinitionIO(DEF, CONFIG);
+		expect(res.inputs).toEqual([]);
+		expect(res.outputs).toEqual([]);
+	});
+
+	it('does not throw when parsing a response with no inputs array', async () => {
+		fetchMock.mockResolvedValue(createMockResponse(ioResponse({ inputs: undefined })));
+
+		const res = await fetchParsedDefinitionIO(DEF, CONFIG);
+		expect(res.inputs).toEqual([]);
+	});
+});
+
 describe('fetchParsedDefinitionIO propagates load diagnostics', () => {
 	it('carries loadErrors/loadWarnings through to the parsed result', async () => {
 		fetchMock.mockResolvedValue(

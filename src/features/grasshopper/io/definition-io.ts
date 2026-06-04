@@ -59,9 +59,16 @@ export async function fetchDefinitionIO(
 	const loadWarnings = nonEmptyStrings(response.warnings);
 	const loadErrors = nonEmptyStrings(response.errors);
 
+	// Guard inputs/outputs to arrays. A server fault can return a 200 whose body
+	// omits these (e.g. a definition-LOAD failure that surfaced as a malformed
+	// success instead of a clean 500), and the downstream `for...of` in
+	// processInputsWithErrors throws "inputs is not iterable". Use Array.isArray
+	// rather than `?? []`: the symptom is non-iterability, so a non-array truthy
+	// value (`{}`, a string) must coerce to `[]` too. The loadErrors/loadWarnings
+	// surfaced above explain *why* the list came back empty.
 	return {
-		inputs: response.inputs,
-		outputs: response.outputs,
+		inputs: Array.isArray(response.inputs) ? response.inputs : [],
+		outputs: Array.isArray(response.outputs) ? response.outputs : [],
 		...(loadWarnings && { loadWarnings }),
 		...(loadErrors && { loadErrors })
 	};
