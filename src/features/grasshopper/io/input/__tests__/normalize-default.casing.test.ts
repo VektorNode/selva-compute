@@ -96,4 +96,25 @@ describe('normalizeDefault — real wire casing (PascalCase InnerTree)', () => {
 		);
 		expect((input as any).default).toBeNull();
 	});
+
+	it('surfaces a MALFORMED_DEFAULT parse error for an unknown default shape', () => {
+		const { input, error } = processInputWithError(
+			createInputSchema({
+				name: 'Weird',
+				paramType: 'Number',
+				default: { somethingElse: 1 } as any
+			})
+		);
+		expect((input as any).default).toBeNull();
+		expect(error?.code).toBe('MALFORMED_DEFAULT');
+		expect(error?.inputName).toBe('Weird');
+		expect(error?.message).toContain('Weird');
+	});
+
+	it('does NOT emit a parse error for a well-formed default', () => {
+		const { error } = processInputWithError(
+			createInputSchema({ paramType: 'Number', default: pascalCaseDefault as any })
+		);
+		expect(error).toBeUndefined();
+	});
 });

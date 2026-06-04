@@ -3,6 +3,16 @@ import { readField, hasField } from '@/core/utils/read-field';
 import type { InputParamSchema } from '../../types';
 
 /**
+ * A non-fatal reason `normalizeDefault` could not interpret a raw `default`.
+ * The schema is still returned (with `default` nulled) so parsing continues;
+ * the caller folds this into the client-visible `parseErrors`.
+ */
+export interface NormalizeDefaultWarning {
+	code: 'MALFORMED_DEFAULT';
+	message: string;
+}
+
+/**
  * Read an item's `data` / `type` case-insensitively. Items are lowercase
  * (`data`/`type`) on every known server branch — they carry `[JsonProperty]` —
  * but reading them defensively costs nothing and guards against future drift.
@@ -41,29 +51,41 @@ function itemType(item: unknown): string | undefined {
  *
  * Behavior:
  * - Non-object / null default → returned unchanged.
- * - Object without an innerTree key → default becomes `null` (and warns; this is
- *   a genuinely unexpected shape, not a casing quirk).
+ * - Object without an innerTree key → default becomes `null` and a
+ *   `MALFORMED_DEFAULT` warning is returned (this is a genuinely unexpected
+ *   shape, not a casing quirk — the old code only logged and silently nulled,
+ *   so the data-loss was invisible on the client).
  * - Empty innerTree → default becomes `undefined`.
  * - tree-access (`treeAccess` or `atMost > 1`) → default becomes a
  *   `Record<branch, parsed[]>` with per-item type-aware parsing.
  * - otherwise → flatten all branch items: 0 → `undefined`, 1 → the value,
  *   N → the array.
+ *
+ * Returns the normalized schema plus an optional `warning`. {@link normalizeDefault}
+ * is the schema-only convenience wrapper for callers that don't need the warning.
  */
-export function normalizeDefault(input: InputParamSchema): InputParamSchema {
+export function normalizeDefaultWithWarning(input: InputParamSchema): {
+	schema: InputParamSchema;
+	warning?: NormalizeDefaultWarning;
+} {
 	if (typeof input.default !== 'object' || input.default === null) {
-		return input;
+		return { schema: input };
 	}
 
 	if (!hasField(input.default, 'innerTree')) {
+		const message = `Input "${input.name ?? 'unknown'}" default had an unrecognized shape (no innerTree key); the default was dropped.`;
 		getLogger().warn('Unexpected structure in input.default:', input.default);
-		return { ...input, default: null };
+		return {
+			schema: { ...input, default: null },
+			warning: { code: 'MALFORMED_DEFAULT', message }
+		};
 	}
 
 	const innerTree = readField<Record<string, unknown>>(input.default, 'innerTree') ?? {};
 
 	// If innerTree is empty, set default to undefined
 	if (Object.keys(innerTree).length === 0) {
-		return { ...input, default: undefined };
+		return { schema: { ...input, default: undefined } };
 	}
 
 	// If treeAccess is true or atMost > 1, preserve the tree structure
@@ -94,7 +116,7 @@ export function normalizeDefault(input: InputParamSchema): InputParamSchema {
 				return data;
 			});
 		}
-		return { ...input, default: tree };
+		return { schema: { ...input, default: tree } };
 	}
 
 	// Otherwise, flatten all values as before
@@ -109,10 +131,18 @@ export function normalizeDefault(input: InputParamSchema): InputParamSchema {
 		}
 	}
 	if (allValues.length === 0) {
-		return { ...input, default: undefined };
+		return { schema: { ...input, default: undefined } };
 	} else if (allValues.length === 1) {
-		return { ...input, default: allValues[0] };
+		return { schema: { ...input, default: allValues[0] } };
 	} else {
-		return { ...input, default: allValues };
+		return { schema: { ...input, default: allValues } };
 	}
+}
+
+/**
+ * Schema-only convenience wrapper around {@link normalizeDefaultWithWarning},
+ * for callers (and tests) that don't consume the warning channel.
+ */
+export function normalizeDefault(input: InputParamSchema): InputParamSchema {
+	return normalizeDefaultWithWarning(input).schema;
 }

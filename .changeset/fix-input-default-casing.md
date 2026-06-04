@@ -8,5 +8,5 @@ The beta removed a global `camelcaseKeys` pass (which had been corrupting value-
 
 - Add a case-insensitive `readField` / `hasField` wire-field reader (`@/core/utils/read-field`).
 - Read the `default` wrapper (`innerTree`) and item fields (`data` / `type`) case-insensitively, so defaults parse correctly regardless of server-branch casing without re-introducing the label-mangling global camelCase pass.
-- Only warn-and-null a genuinely unknown default shape (no tree key at all), not a casing variant.
+- Surface a genuinely unrecognized default shape (no tree key at all) as a client-visible `MALFORMED_DEFAULT` entry in `parseErrors` instead of only logging a server-side warning — so a dropped default is observable on both client and server rather than vanishing silently.
 - Add regression tests pinning the real PascalCase wire shape, including a guard that a non-empty tree default can never silently become `null`.

@@ -16,6 +16,8 @@ export const ErrorCodes = {
 	BROWSER_ONLY: 'BROWSER_ONLY',
 	ENVIRONMENT_ERROR: 'ENVIRONMENT_ERROR',
 	ENCODING_ERROR: 'ENCODING_ERROR',
+	/** An input's `default` had a shape the normalizer didn't recognize (no innerTree key). */
+	MALFORMED_DEFAULT: 'MALFORMED_DEFAULT',
 	/** Scheduler latest-wins: this call was replaced by a newer one. */
 	SUPERSEDED: 'SUPERSEDED',
 	/** Scheduler / caller-supplied AbortSignal: this call was aborted. */
