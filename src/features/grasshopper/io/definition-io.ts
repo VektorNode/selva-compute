@@ -1,6 +1,5 @@
 import { ComputeConfig, RhinoComputeError, ErrorCodes } from '@/core';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
-import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
 import { prepareGrasshopperArgs } from '../solve';
 
@@ -44,12 +43,16 @@ export async function fetchDefinitionIO(
 		});
 	}
 
-	// Convert PascalCase to camelCase
-	const camelCased = camelcaseKeys(response, { deep: true }) as IoResponseSchema;
-
+	// The Compute8 server fork already serializes the IO schema in camelCase
+	// (`[JsonProperty("paramType")]` etc.) — pinned by the seam snapshot in
+	// tests/contract/server-contract.test.ts. So we read the fields straight
+	// through. A previous deep `camelcaseKeys` here was not only redundant but
+	// corrupted value-list `values` keys — user-authored dropdown labels like
+	// "Option A" were mangled to "optionA" (regression-pinned in
+	// definition-io.casing.test.ts).
 	return {
-		inputs: camelCased.inputs,
-		outputs: camelCased.outputs
+		inputs: response.inputs,
+		outputs: response.outputs
 	};
 }
 

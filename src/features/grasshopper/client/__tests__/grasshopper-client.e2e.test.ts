@@ -115,25 +115,28 @@ describe('GrasshopperClient.solve (e2e through transport)', () => {
 
 describe('GrasshopperClient.getIO (e2e through transport + parser pipeline)', () => {
 	it('fetches IO and parses raw inputs into typed InputParams', async () => {
+		// camelCase to match the real Compute8 server contract (pinned by
+		// tests/contract/server-contract.test.ts) — fetchDefinitionIO reads these
+		// straight through with no key conversion.
 		const ioResponse = {
-			InputNames: [],
-			OutputNames: [],
-			Inputs: [
+			inputnames: [],
+			outputnames: [],
+			inputs: [
 				{
-					Name: 'Radius',
-					Nickname: 'R',
-					Description: '',
-					ParamType: 'Number',
-					TreeAccess: false,
-					GroupName: null,
-					Minimum: 0,
-					Maximum: 10,
-					AtLeast: 1,
-					AtMost: 1,
-					Default: '5'
+					name: 'Radius',
+					nickname: 'R',
+					description: '',
+					paramType: 'Number',
+					treeAccess: false,
+					groupName: null,
+					minimum: 0,
+					maximum: 10,
+					atLeast: 1,
+					atMost: 1,
+					default: '5'
 				}
 			],
-			Outputs: []
+			outputs: []
 		};
 		route({
 			'/healthcheck': onlineServer,

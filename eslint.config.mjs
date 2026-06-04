@@ -55,6 +55,13 @@ export const config = [
 			'@typescript-eslint/no-explicit-any': 'warn',
 			'svelte/no-at-html-tags': 'warn'
 		}
+	},
+	{
+		// CLI maintenance scripts — console output is their interface.
+		files: ['scripts/**/*.mjs'],
+		rules: {
+			'no-console': 'off'
+		}
 	}
 ];
 

@@ -1,0 +1,81 @@
+{
+	"ref": "Compute8",
+	"classes": {
+		"Schema": {
+			"name": "Schema",
+			"base": null,
+			"properties": [
+				"absoluteTolerance",
+				"angleTolerance",
+				"modelUnits",
+				"dataVersion",
+				"algo",
+				"filename",
+				"pointer",
+				"cacheSolve",
+				"recursionlevel",
+				"values",
+				"warnings",
+				"errors"
+			]
+		},
+		"IoResponseSchema": {
+			"name": "IoResponseSchema",
+			"base": null,
+			"properties": [
+				"description",
+				"filename",
+				"cachekey",
+				"inputnames",
+				"outputnames",
+				"icon",
+				"inputs",
+				"outputs",
+				"warnings",
+				"errors"
+			]
+		},
+		"InputParamSchema": {
+			"name": "InputParamSchema",
+			"base": "IoParamSchema",
+			"properties": [
+				"description",
+				"atLeast",
+				"atMost",
+				"treeAccess",
+				"default",
+				"minimum",
+				"maximum",
+				"groupName",
+				"values"
+			]
+		},
+		"IoParamSchema": {
+			"name": "IoParamSchema",
+			"base": null,
+			"properties": [
+				"name",
+				"nickname",
+				"paramType",
+				"id"
+			]
+		},
+		"ResthopperObject": {
+			"name": "ResthopperObject",
+			"base": "IEquatable<ResthopperObject>",
+			"properties": [
+				"type",
+				"data",
+				"id"
+			]
+		},
+		"DataTree": {
+			"name": "DataTree",
+			"base": null,
+			"properties": [
+				"ParamName",
+				"InnerTree"
+			]
+		}
+	}
+}

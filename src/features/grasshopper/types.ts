@@ -250,12 +250,13 @@ export interface GrasshopperComputeConfig extends ComputeConfig {
 }
 
 /**
- * Raw I/O response schema from API (PascalCase)
+ * Raw I/O response schema as returned by the `/io` endpoint.
  *
- * This is the direct response format from the Rhino Compute server API.
- * All property names are in PascalCase, which is typical for .NET APIs.
- * This raw response is converted to camelCase by the camelcaseKeys() function
- * in the fetchDefinitionIO() method.
+ * The VektorNode/compute.rhino3d@Compute8 server fork standardized IO
+ * serialization to camelCase (`[JsonProperty("paramType")]` etc.), so this is
+ * already the on-the-wire shape — `fetchDefinitionIO` reads it straight through
+ * with no key conversion. The field+casing contract is pinned against the
+ * server source in `tests/contract/server-contract.test.ts`.
  */
 export interface IoResponseSchema {
 	description: string;

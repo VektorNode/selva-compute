@@ -52,7 +52,15 @@ export interface RetryPolicy {
 }
 
 export interface ComputeConfig {
-	/** The base URL of the Rhino Compute server (e.g., http://localhost:6500) */
+	/**
+	 * The base URL of the Rhino Compute server (e.g., http://localhost:6500).
+	 *
+	 * This should point at the `rhino.compute` front (the reverse proxy), not a
+	 * bare `compute.geometry` child process. `ComputeServerStats` relies on the
+	 * proxy-only endpoints `/healthcheck` and `/activechildren`; targeting a
+	 * bare `compute.geometry` would make `isServerOnline()` 404 even though
+	 * `/grasshopper` would still solve.
+	 */
 	serverUrl: string;
 	/** Optional API key for authenticating with the server (RhinoComputeKey) */
 	apiKey?: string;
