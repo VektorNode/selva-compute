@@ -1,5 +1,6 @@
 import { DataTreeDefault, DataTreePath, InputParam, DataTree } from '../types';
 import { getLogger } from '@/core';
+import { isDataTreeDefault, TREE_PATH_RE } from './tree-path';
 
 /**
  * Value types that can be stored in a DataTree
@@ -201,8 +202,8 @@ export class TreeBuilder {
 				const value = input.default;
 
 				// Handle tree access (complex TreeBuilder structure)
-				if (input.treeAccess && TreeBuilder.isDataTreeStructure(value)) {
-					tree.fromDataTreeDefault(value as DataTreeDefault);
+				if (input.treeAccess && isDataTreeDefault(value)) {
+					tree.fromDataTreeDefault(value);
 
 					// Apply numeric constraints to tree items
 					if (TreeBuilder.isNumericInput(input)) {
@@ -316,13 +317,8 @@ export class TreeBuilder {
 	 */
 	private static buildFromValue(paramName: string, value: DataTreeValue): TreeBuilder {
 		const tree = new TreeBuilder(paramName);
-		if (
-			typeof value === 'object' &&
-			value !== null &&
-			!Array.isArray(value) &&
-			TreeBuilder.isDataTreeStructure(value)
-		) {
-			tree.fromDataTreeDefault(value as DataTreeDefault);
+		if (isDataTreeDefault(value)) {
+			tree.fromDataTreeDefault(value);
 		} else {
 			tree.appendFlat(value);
 		}
@@ -437,7 +433,7 @@ export class TreeBuilder {
 	 */
 	public static parsePathString(pathStr: string): number[] {
 		// Allow the legitimate root path "{}" alongside "{0;1;2}"
-		const match = pathStr.match(/^\{([\d;]*)\}$/);
+		const match = pathStr.match(TREE_PATH_RE);
 		if (!match) {
 			getLogger().warn(`Invalid TreeBuilder path format: ${pathStr}, using [0]`);
 			return [0];
@@ -535,16 +531,6 @@ export class TreeBuilder {
 		if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
 			return false;
 		return true;
-	}
-
-	/**
-	 * Check if value is a TreeBuilder structure.
-	 */
-	private static isDataTreeStructure(value: unknown): value is DataTreeDefault {
-		if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-		return Object.entries(value).every(
-			([key, val]) => typeof key === 'string' && /^\{[\d;]+\}$/.test(key) && Array.isArray(val)
-		);
 	}
 
 	/**

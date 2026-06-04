@@ -22,14 +22,21 @@ export type {
 	SolveSchedulerOptions,
 	SolveContext,
 	SolveResult,
-	SolveExecutor
+	SolveExecutor,
+	CacheKeyExecutor
 } from './scheduler/solve-scheduler';
-export { hashSolveInput, stableStringify, fnv1a } from './scheduler/stable-hash';
+export {
+	hashSolveInput,
+	hashDefinition,
+	stableStringify,
+	fnv1a,
+	fnv1aBytes
+} from './scheduler/stable-hash';
 
 // ============================================================================
 // COMPUTATION
 // ============================================================================
-export { solveGrasshopperDefinition } from './compute/solve';
+export { solveGrasshopperDefinition } from './solve';
 
 // ============================================================================
 // I/O PROCESSING
@@ -57,10 +64,10 @@ export { TreeBuilder } from './data-tree/data-tree';
 export type { DataTreeValue } from './data-tree/data-tree';
 
 // ============================================================================
-// FILE HANDLING
+// FILE HANDLING (generic — now lives in core/files, re-exported here for back-compat)
 // ============================================================================
-export { extractFilesFromComputeResponse, downloadFileData } from './file-handling/handle-files';
-export type { ProcessedFile, FileData, FileBaseInfo } from './file-handling/types';
+export { extractFilesFromComputeResponse, downloadFileData } from '@/core/files/handle-files';
+export type { ProcessedFile, FileData, FileBaseInfo } from '@/core/files/types';
 
 // ============================================================================
 // TYPES

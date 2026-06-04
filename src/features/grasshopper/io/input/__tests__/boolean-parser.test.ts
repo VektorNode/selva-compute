@@ -1,61 +1,60 @@
-// src/features/grasshopper/io/input/input-parsers/__tests__/boolean-parser.test.ts
 import { describe, expect, it } from 'vitest';
-import { processBooleanInput } from '@/features/grasshopper/io/input/input-parsers';
+import { INPUT_TYPE_PARSERS } from '@/features/grasshopper/io/input/input-type-parsers';
 import { createBooleanInputSchema } from '@tests/helpers/test-data-builders';
 import { RhinoComputeError } from '@/core';
+import type { BaseInputType, InputParamSchema } from '@/features/grasshopper/types';
 
-describe('processBooleanInput', () => {
+const base: BaseInputType = {
+	description: '',
+	name: 'test',
+	nickname: 'T',
+	treeAccess: false,
+	groupName: ''
+};
+
+function parseBoolean(schema: InputParamSchema) {
+	return INPUT_TYPE_PARSERS.get('Boolean')!.parse(schema, base) as any;
+}
+
+describe('boolean parser', () => {
 	describe('string conversions', () => {
 		it('should convert string booleans (case-insensitive)', () => {
-			expect(createBooleanInputSchema({ default: 'true' })).toSatisfy((input) => {
-				processBooleanInput(input);
-				return input.default === true;
-			});
-
-			expect(createBooleanInputSchema({ default: 'FALSE' })).toSatisfy((input) => {
-				processBooleanInput(input);
-				return input.default === false;
-			});
+			expect(parseBoolean(createBooleanInputSchema({ default: 'true' })).default).toBe(true);
+			expect(parseBoolean(createBooleanInputSchema({ default: 'FALSE' })).default).toBe(false);
 		});
 
 		it('should throw error for invalid boolean string', () => {
 			const input = createBooleanInputSchema({ default: 'invalid' });
-			expect(() => processBooleanInput(input)).toThrow(RhinoComputeError);
+			expect(() => parseBoolean(input)).toThrow(RhinoComputeError);
 		});
 	});
 
 	describe('array handling', () => {
 		it('should convert arrays of string booleans', () => {
-			const input = createBooleanInputSchema({ default: ['true', 'False', 'TRUE'] });
-			processBooleanInput(input);
-			expect(input.default).toEqual([true, false, true]);
+			const result = parseBoolean(createBooleanInputSchema({ default: ['true', 'False', 'TRUE'] }));
+			expect(result.default).toEqual([true, false, true]);
 		});
 
-		it('should filter non-boolean values and throw on invalid strings', () => {
-			const input = createBooleanInputSchema({
-				default: [true, 123, 'false', null] as any[]
-			});
-			processBooleanInput(input);
-			expect(input.default).toEqual([true, false]);
+		it('should filter non-boolean values', () => {
+			const result = parseBoolean(
+				createBooleanInputSchema({ default: [true, 123, 'false', null] as any[] })
+			);
+			expect(result.default).toEqual([true, false]);
 		});
 	});
 
 	describe('real-world scenarios', () => {
 		it('should process Grasshopper toggle', () => {
-			const input = createBooleanInputSchema({
-				name: 'Toggle',
-				default: 'false'
-			});
-			processBooleanInput(input);
-			expect(input.default).toBe(false);
+			expect(
+				parseBoolean(createBooleanInputSchema({ name: 'Toggle', default: 'false' })).default
+			).toBe(false);
 		});
 
 		it('should process boolean lists for conditional logic', () => {
-			const input = createBooleanInputSchema({
-				default: ['true', 'true', 'false', 'true']
-			});
-			processBooleanInput(input);
-			expect(input.default).toEqual([true, true, false, true]);
+			const result = parseBoolean(
+				createBooleanInputSchema({ default: ['true', 'true', 'false', 'true'] })
+			);
+			expect(result.default).toEqual([true, true, false, true]);
 		});
 	});
 });

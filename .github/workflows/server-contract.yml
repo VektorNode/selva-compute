@@ -1,0 +1,60 @@
+name: Server contract drift
+
+# Live drift alarm for the seam against VektorNode/compute.rhino3d@Compute8.
+# Fetches the server's C# contract source and fails if it no longer matches the
+# committed snapshot (tests/contract/server-contract.snapshot.json). Runs on a
+# schedule (so a server-side rename surfaces within a day) and on demand, plus
+# on PRs that touch the contract tooling itself.
+on:
+  schedule:
+    # 06:00 UTC daily.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Server branch to check (default: Compute8). e.g. merge/8x'
+        required: false
+        default: ''
+  pull_request:
+    paths:
+      - 'tests/contract/**'
+      - 'scripts/fetch-server-contract.mjs'
+      - '.github/workflows/server-contract.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: Check server contract matches snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The drift alarm: fetches live C# from the server branch, re-parses with
+      # the same parser the snapshot was built from, and exits non-zero with a
+      # field-level diff on any rename/recasing/added/removed field.
+      #
+      # SERVER_CONTRACT_REF lets a manual run target a different branch (e.g.
+      # merge/8x); empty/scheduled runs fall back to the committed default
+      # (Compute8) inside the script.
+      - name: Check server contract
+        run: pnpm contract:check
+        env:
+          SERVER_CONTRACT_REF: ${{ github.event.inputs.ref }}

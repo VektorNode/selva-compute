@@ -1,5 +1,6 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
+import { validateServerUrl } from './validate-server-url';
 
 /**
  * ComputeServerStats provides methods to query Rhino Compute server statistics.
@@ -34,38 +35,8 @@ export default class ComputeServerStats {
 	 * @param apiKey - Optional API key for authentication
 	 */
 	constructor(serverUrl: string, apiKey?: string) {
-		if (!serverUrl?.trim()) {
-			throw new RhinoComputeError('serverUrl is required', ErrorCodes.INVALID_CONFIG, {
-				context: { serverUrl }
-			});
-		}
-
-		// Validate URL has http:// or https:// scheme
-		if (!serverUrl.match(/^https?:\/\//)) {
-			throw new RhinoComputeError(
-				`Invalid serverUrl: "${serverUrl}". Must start with "http://" or "https://". ` +
-					`For example: "http://localhost:5000" or "https://example.com"`,
-				ErrorCodes.INVALID_CONFIG,
-				{ context: { serverUrl } }
-			);
-		}
-
-		try {
-			new URL(serverUrl);
-		} catch (err) {
-			throw new RhinoComputeError(
-				`Invalid serverUrl: "${serverUrl}". Must be a valid URL. ` +
-					`Received error: ${err instanceof Error ? err.message : String(err)}`,
-				ErrorCodes.INVALID_CONFIG,
-				{
-					context: { serverUrl },
-					originalError: err instanceof Error ? err : undefined
-				}
-			);
-		}
-
+		this.serverUrl = validateServerUrl(serverUrl);
 		this.apiKey = apiKey;
-		this.serverUrl = serverUrl.replace(/\/+$/, '');
 	}
 
 	/**
@@ -204,6 +175,55 @@ export default class ComputeServerStats {
 			...(version && { version }),
 			...(activeChildren !== null && { activeChildren })
 		};
+	}
+
+	/**
+	 * Purge the server's solve-results / URL-data cache.
+	 *
+	 * POSTs to `cache/purge` and returns the number of entries removed, or `null`
+	 * if the request failed. This clears cached solve responses and fetched
+	 * definition-URL data; it does NOT evict the definition cache (active
+	 * `pointer` references stay valid).
+	 *
+	 * **Caveat:** `cache/purge` is forwarded by the rhino.compute proxy to a
+	 * single round-robin-selected child, so in a multi-child deployment one call
+	 * purges one child's cache. Call repeatedly (or size the pool to 1) if you
+	 * need a fleet-wide purge.
+	 *
+	 * @returns Number of entries removed, or `null` on failure.
+	 *
+	 * @example
+	 * ```ts
+	 * const removed = await stats.purgeCache();
+	 * if (removed !== null) console.log(`Purged ${removed} cached solves`);
+	 * ```
+	 */
+	public async purgeCache(): Promise<number | null> {
+		this.ensureNotDisposed();
+
+		try {
+			const response = await fetch(`${this.serverUrl}/cache/purge`, {
+				method: 'POST',
+				headers: this.buildHeaders()
+			});
+
+			if (!response.ok) {
+				getLogger().warn('[ComputeServerStats] Failed to purge cache:', response.status);
+				return null;
+			}
+
+			// Read text-first so a non-JSON body can't throw "body already read".
+			const text = await response.text();
+			try {
+				const json = JSON.parse(text);
+				return typeof json.purged === 'number' ? json.purged : null;
+			} catch {
+				return null;
+			}
+		} catch (err) {
+			getLogger().warn('[ComputeServerStats] Error purging cache:', err);
+			return null;
+		}
 	}
 
 	/**

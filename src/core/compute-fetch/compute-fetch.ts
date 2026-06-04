@@ -1,26 +1,41 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
 
-import type { ComputeConfig, RetryPolicy } from '../types';
-import type {
-	GrasshopperComputeConfig,
-	GrasshopperComputeResponse,
-	IoResponseSchema
-} from '@/features/grasshopper/types';
+import type { ComputeConfig, RetryPolicy, ServerTiming } from '../types';
+
+// ============================================================================
+// Server-Timing
+// ============================================================================
 
 /**
- * Valid endpoints for Rhino Compute (improved response type handling).
+ * Parse a `Server-Timing` header value into typed durations (ms).
+ *
+ * Header grammar (RFC 9110 §10.1.10), as emitted by the solve endpoint:
+ *   `decode;dur=3, solve;dur=120, encode;dur=8`
+ *
+ * Returns null when the header is absent or carries no recognizable metric, so
+ * the caller can skip the callback entirely.
+ *
+ * @internal exported for tests
  */
-export type Endpoint = 'grasshopper' | 'io' | string;
-
-export type EndpointResponseMap = {
-	grasshopper: GrasshopperComputeResponse;
-	io: IoResponseSchema;
-};
-
-export type ComputeResponseFor<E extends string> = E extends keyof EndpointResponseMap
-	? EndpointResponseMap[E]
-	: unknown;
+export function parseServerTiming(headerValue: string | null): ServerTiming | null {
+	if (!headerValue) return null;
+	const timing: ServerTiming = { raw: headerValue };
+	let sawMetric = false;
+	for (const part of headerValue.split(',')) {
+		const [name, ...params] = part.trim().split(';');
+		const durParam = params.find((p) => p.trim().toLowerCase().startsWith('dur'));
+		if (!durParam) continue;
+		const dur = Number(durParam.split('=')[1]);
+		if (!Number.isFinite(dur)) continue;
+		const key = name.trim().toLowerCase();
+		if (key === 'decode' || key === 'solve' || key === 'encode') {
+			timing[key] = dur;
+			sawMetric = true;
+		}
+	}
+	return sawMetric ? timing : null;
+}
 
 // ============================================================================
 // Retry Policy
@@ -105,9 +120,7 @@ function throwHttpError(
 	});
 
 	const trimmed = errorBody.trim();
-	const bodyHint = trimmed
-		? ` — ${trimmed.slice(0, 200)}${trimmed.length > 200 ? '…' : ''}`
-		: '';
+	const bodyHint = trimmed ? ` — ${trimmed.slice(0, 200)}${trimmed.length > 200 ? '…' : ''}` : '';
 
 	const context = {
 		url: fullUrl,
@@ -129,9 +142,18 @@ function throwHttpError(
 		},
 		429: { message: `Rate limit exceeded${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
 		500: { message: `Server error: ${statusText}${bodyHint}`, code: ErrorCodes.COMPUTATION_ERROR },
-		502: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
-		503: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR },
-		504: { message: `Service unavailable: ${statusText}${bodyHint}`, code: ErrorCodes.NETWORK_ERROR }
+		502: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		},
+		503: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		},
+		504: {
+			message: `Service unavailable: ${statusText}${bodyHint}`,
+			code: ErrorCodes.NETWORK_ERROR
+		}
 	};
 
 	const error = errorMap[status] || {
@@ -252,7 +274,8 @@ async function handleResponse(
 	requestSize: number,
 	serverUrl: string,
 	startTime: number,
-	debug?: boolean
+	debug?: boolean,
+	onServerTiming?: (timing: ServerTiming) => void
 ): Promise<any> {
 	const responseTime = Math.round(performance.now() - startTime);
 
@@ -297,9 +320,29 @@ async function handleResponse(
 					return parsed;
 				}
 
-				// If it's a raw exception from the server (like ArgumentException), include it in the error message
-				if (parsed?.Message) {
-					errorBody = `${parsed.ExceptionType ? parsed.ExceptionType + ': ' : ''}${parsed.Message}\n${parsed.StackTrace || ''}`;
+				// Raw server-side exception. The Compute8 server's exception handler
+				// (compute.geometry Startup.cs) emits:
+				//   { error: "Internal Server Error", message: "<category>: <detail>",
+				//     stackTrace?: string[] }   // stackTrace only when Config.Debug
+				// The actionable part is `message` — surface it, with the optional
+				// stack appended for debugging. We prefer `message`/`error` (current
+				// server) and keep `Message`/`ExceptionType`/`StackTrace` (old
+				// PascalCase .NET shape) as a back-compat fallback so an older server
+				// still produces a useful message.
+				const serverMessage =
+					(typeof parsed?.message === 'string' && parsed.message) ||
+					(typeof parsed?.Message === 'string' && parsed.Message) ||
+					'';
+				const exceptionType =
+					(typeof parsed?.ExceptionType === 'string' && parsed.ExceptionType) || '';
+				const stack = parsed?.stackTrace ?? parsed?.StackTrace;
+				const stackStr = Array.isArray(stack) ? stack.join('\n') : stack || '';
+
+				if (serverMessage) {
+					// Don't repeat the generic "Internal Server Error" label when the
+					// message already carries the real detail.
+					const prefix = exceptionType ? `${exceptionType}: ` : '';
+					errorBody = `${prefix}${serverMessage}${stackStr ? `\n${stackStr}` : ''}`;
 				} else if (parsed?.error) {
 					errorBody =
 						typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error, null, 2);
@@ -316,6 +359,20 @@ async function handleResponse(
 	}
 
 	log(`✅ Request [${requestId}] completed in ${responseTime}ms`, debug);
+
+	// Surface the server's per-request timing breakdown (if it sent one and a
+	// caller is listening). Best-effort: a throwing callback must not fail the
+	// request, since the body parse below is the real result.
+	if (onServerTiming) {
+		const timing = parseServerTiming(response.headers.get('Server-Timing'));
+		if (timing) {
+			try {
+				onServerTiming(timing);
+			} catch (err) {
+				if (debug) log(`   onServerTiming callback threw: ${err}`, true);
+			}
+		}
+	}
 
 	try {
 		return await response.json();
@@ -342,7 +399,7 @@ interface AttemptContext {
 	fullUrl: string;
 	requestId: string;
 	headers: HeadersInit;
-	config: ComputeConfig | GrasshopperComputeConfig;
+	config: ComputeConfig;
 }
 
 interface AttemptResult {
@@ -410,7 +467,8 @@ async function attemptFetch(
 			ctx.requestSize,
 			ctx.config.serverUrl,
 			startTime,
-			ctx.config.debug
+			ctx.config.debug,
+			ctx.config.onServerTiming
 		);
 		return { ok: true, value };
 	} catch (error) {
@@ -533,11 +591,15 @@ async function attemptFetch(
  *
  * Use this for advanced, low-level control over compute requests. For most use cases, prefer higher-level APIs.
  *
- * @typeParam E - The endpoint name (e.g., 'grasshopper', 'io'). Determines the response type for better type safety.
+ * The transport is response-type-agnostic: it does not know which response a
+ * given endpoint returns. Callers supply the response type via `R` (defaulting
+ * to `unknown`, which forces an explicit narrowing before use).
+ *
+ * @typeParam R - The expected response shape. The caller names it at the call site.
  * @param endpoint - The Compute API endpoint (e.g., 'grasshopper', 'io', 'mesh').
  * @param args - Pre-prepared arguments for the request body.
  * @param config - Compute configuration (server URL, API key, timeout, debug, retry, signal).
- * @returns The parsed JSON response from the server, typed according to the endpoint.
+ * @returns The parsed JSON response from the server, typed as `R`.
  *
  * @example
  * // Basic usage for the Grasshopper endpoint:
@@ -553,11 +615,11 @@ async function attemptFetch(
  *   }
  * );
  */
-export async function fetchRhinoCompute<E extends Endpoint>(
-	endpoint: E,
+export async function fetchRhinoCompute<R = unknown>(
+	endpoint: string,
 	args: Record<string, any>,
-	config: ComputeConfig | GrasshopperComputeConfig
-): Promise<ComputeResponseFor<E>> {
+	config: ComputeConfig
+): Promise<R> {
 	const requestId = generateRequestId();
 	const body = JSON.stringify(args);
 	const requestSize = body.length;
@@ -587,7 +649,7 @@ export async function fetchRhinoCompute<E extends Endpoint>(
 	for (let attempt = 0; attempt < totalAttempts; attempt++) {
 		const result = await attemptFetch(ctx, retryPolicy, attempt, totalAttempts);
 
-		if (result.ok) return result.value as ComputeResponseFor<E>;
+		if (result.ok) return result.value as R;
 
 		if (!result.retry) throw result.cause;
 

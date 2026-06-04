@@ -1,11 +1,17 @@
 import { ErrorCodes, RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core/utils/logger';
 import ComputeServerStats from '@/core/server/compute-server-stats';
+import { validateServerUrl } from '@/core/server/validate-server-url';
 import { ComputeConfig, RetryPolicy } from '@/core/types';
 
 import { fetchDefinitionIO, fetchParsedDefinitionIO, solveGrasshopperDefinition } from '..';
+import { solveByCacheKey, solveGrasshopperDefinitionWithCacheKey } from '../solve';
 import { GrasshopperComputeConfig, GrasshopperComputeResponse, DataTree } from '../types';
-import { SolveScheduler, SolveSchedulerOptions } from '../scheduler/solve-scheduler';
+import {
+	SolveScheduler,
+	SolveSchedulerOptions,
+	CacheKeyExecutor
+} from '../scheduler/solve-scheduler';
 
 /**
  * Per-call options that override the client's default ComputeConfig values.
@@ -205,7 +211,19 @@ export default class GrasshopperClient {
 			dataTree: DataTree[],
 			config: GrasshopperComputeConfig
 		) => solveGrasshopperDefinition(dataTree, definition, config);
-		return new SolveScheduler(executor, this.config, options);
+
+		// Cache-key-aware executor: solve by `pointer: cacheKey` when known (skips
+		// re-uploading large definitions), capturing/refreshing the key and
+		// falling back to a full upload on a server cache miss.
+		const cacheKeyExecutor: CacheKeyExecutor = (definition, dataTree, cacheKey, config) =>
+			cacheKey === null
+				? solveGrasshopperDefinitionWithCacheKey(dataTree, definition, config).then((r) => ({
+						...r,
+						missed: false
+					}))
+				: solveByCacheKey(dataTree, cacheKey, definition, config);
+
+		return new SolveScheduler(executor, this.config, options, cacheKeyExecutor);
 	}
 
 	/**
@@ -237,33 +255,9 @@ export default class GrasshopperClient {
 	 * @throws {RhinoComputeError} with code INVALID_CONFIG if configuration is invalid
 	 */
 	private normalizeComputeConfig<T extends ComputeConfig | GrasshopperComputeConfig>(config: T): T {
-		if (!config.serverUrl?.trim()) {
-			throw new RhinoComputeError('serverUrl is required', ErrorCodes.INVALID_CONFIG, {
-				context: { receivedServerUrl: config.serverUrl }
-			});
-		}
-
-		// Validate URL format
-		try {
-			new URL(config.serverUrl);
-		} catch {
-			throw new RhinoComputeError('serverUrl must be a valid URL', ErrorCodes.INVALID_CONFIG, {
-				context: { receivedServerUrl: config.serverUrl }
-			});
-		}
-
-		// Validate that it's not the default public endpoint
-		if (config.serverUrl === '' || config.serverUrl === 'https://compute.rhino3d.com/') {
-			throw new RhinoComputeError(
-				'serverUrl must be set to your Compute server URL. The default public endpoint is not allowed.',
-				ErrorCodes.INVALID_CONFIG,
-				{ context: { receivedServerUrl: config.serverUrl } }
-			);
-		}
-
 		return {
 			...config,
-			serverUrl: config.serverUrl.replace(/\/+$/, ''), // Remove trailing slashes
+			serverUrl: validateServerUrl(config.serverUrl),
 			apiKey: config.apiKey,
 			authToken: config.authToken,
 			debug: config.debug ?? false,

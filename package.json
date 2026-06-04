@@ -77,10 +77,19 @@
 		"format:check": "prettier --check .",
 		"test": "vitest",
 		"test:watch": "vitest watch",
+		"contract:snapshot": "node scripts/fetch-server-contract.mjs",
+		"contract:check": "node scripts/fetch-server-contract.mjs --check",
+		"test:seams": "vitest run tests/contract",
+		"test:seams:live": "RUN_LIVE_CONTRACT=1 vitest run tests/contract/server-contract.live.test.ts",
 		"type-check": "tsc --noEmit",
 		"build-docs": "typedoc",
 		"prepublishOnly": "pnpm build",
-		"release": "changeset publish"
+		"release": "changeset publish",
+		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*.{ts,js,mjs,svelte,json,md}": "prettier --write",
+		"*.{ts,js,mjs,svelte}": "eslint --fix"
 	},
 	"dependencies": {
 		"fflate": "^0.8.2",
@@ -99,11 +108,14 @@
 		"@eslint/js": "^9.39.3",
 		"@types/node": "^25.3.3",
 		"@types/three": "^0.182.0",
+		"@vitest/coverage-v8": "^3.2.4",
 		"esbuild-plugin-file-path-extensions": "^2.1.4",
 		"eslint": "^9.39.3",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.15.0",
 		"globals": "^17.4.0",
+		"husky": "^9.1.7",
+		"lint-staged": "^17.0.7",
 		"prettier": "^3.8.1",
 		"prettier-plugin-svelte": "^3.5.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",

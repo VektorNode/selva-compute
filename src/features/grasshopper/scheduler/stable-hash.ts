@@ -41,25 +41,56 @@ export function stableStringify(value: unknown): string {
 }
 
 /**
- * 32-bit FNV-1a— fast, no dependencies. Returns unsigned hex string.
+ * 32-bit FNV-1a core over a sequence of byte/char codes. Returns unsigned hex.
+ * Shared by the string and byte hashers so they stay the same algorithm.
  */
-export function fnv1a(input: string): string {
+function fnv1aCore(length: number, codeAt: (i: number) => number): string {
 	let hash = 0x811c9dc5;
-	for (let i = 0; i < input.length; i++) {
-		hash ^= input.charCodeAt(i);
+	for (let i = 0; i < length; i++) {
+		hash ^= codeAt(i);
 		hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
 	}
 	return hash.toString(16).padStart(8, '0');
 }
 
 /**
+ * 32-bit FNV-1a— fast, no dependencies. Returns unsigned hex string.
+ */
+export function fnv1a(input: string): string {
+	return fnv1aCore(input.length, (i) => input.charCodeAt(i));
+}
+
+/**
+ * 32-bit FNV-1a over raw bytes. Returns unsigned hex string.
+ */
+export function fnv1aBytes(bytes: Uint8Array): string {
+	return fnv1aCore(bytes.length, (i) => bytes[i]);
+}
+
+/**
  * Hash definition and data tree into a stable cache key.
- * For Uint8Array, uses length + samples to keep hashing fast.
+ *
+ * The definition is the *identity* of what we solve, so a binary definition is
+ * hashed over its full content (`fnv1aBytes`) — a length-only or sampled key
+ * would let two different `.gh` files collide and serve one's cached solve for
+ * the other. `.gh` files are small enough that a single linear pass is
+ * negligible. (Note this differs from `stableStringify`'s sampled handling of a
+ * `Uint8Array` found *inside* the dataTree, where sampling is a deliberate
+ * per-solve perf tradeoff.)
  */
 export function hashSolveInput(definition: string | Uint8Array, dataTree: unknown): string {
-	const defKey =
-		typeof definition === 'string'
-			? definition
-			: stableStringify({ __u8: true, len: definition.length });
-	return fnv1a(`${defKey}|${stableStringify(dataTree)}`);
+	return fnv1a(`${hashDefinition(definition)}|${stableStringify(dataTree)}`);
+}
+
+/**
+ * Stable identity of a definition alone (no inputs) — used to key the
+ * server-cache-key map so the same definition reuses its `pointer` across solves
+ * with different inputs. Same full-content hashing as {@link hashSolveInput}: a
+ * binary definition is hashed over all its bytes so two distinct `.gh` files of
+ * equal length can't share a cache key.
+ */
+export function hashDefinition(definition: string | Uint8Array): string {
+	return typeof definition === 'string'
+		? definition
+		: `u8:${definition.length}:${fnv1aBytes(definition)}`;
 }

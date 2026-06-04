@@ -1,4 +1,5 @@
-import { RhinoComputeError, ErrorCodes, getLogger } from '@/core';
+import { RhinoComputeError, ErrorCodes } from '@/core/errors';
+import { getLogger } from '@/core/utils/logger';
 import { decodeBase64ToBinary } from '@/core/utils/encoding';
 
 import { FileBaseInfo, FileData, ProcessedFile } from './types';
@@ -89,20 +90,19 @@ export const downloadFileData = async (
 };
 
 /**
- * Processes files from compute response data and additional files.
- * Converts base64-encoded data to binary and fetches additional files from URLs.
+ * Decode the inline files carried in a compute response into `ProcessedFile`s.
  *
- * @param dataItems - An array of FileData items to process.
- * @param additionalFiles - Optional additional files to fetch and include.
- * @returns A Promise resolving to an array of ProcessedFile objects.
+ * Pure and synchronous: base64 items are decoded to binary, plain-text items are
+ * passed through, and the archive path is derived from `subFolder` + name. Items
+ * with no usable `data` are skipped. This is the half of file handling that both
+ * public entry points share; it never touches the network and never throws.
+ *
+ * @param dataItems - `FileData` items from the compute response.
+ * @returns The decoded files.
  */
-const processFiles = async (
-	dataItems: FileData[],
-	additionalFiles: FileBaseInfo[] | FileBaseInfo | null
-): Promise<ProcessedFile[]> => {
+const decodeResponseFiles = (dataItems: FileData[]): ProcessedFile[] => {
 	const processedFiles: ProcessedFile[] = [];
 
-	// Process compute response files
 	dataItems.forEach((item) => {
 		let filePath = `${item.fileName}${item.fileType}`;
 
@@ -111,10 +111,12 @@ const processFiles = async (
 		}
 
 		if (item.isBase64Encoded === true && item.data) {
-			const bites = decodeBase64ToBinary(item.data);
+			// `decodeBase64ToBinary` already returns a correctly-bounded view;
+			// re-wrapping `.buffer` would discard its byteOffset/byteLength and
+			// expose the whole (possibly pooled) backing buffer as corrupt content.
 			processedFiles.push({
 				fileName: `${item.fileName}${item.fileType}`,
-				content: new Uint8Array(bites.buffer),
+				content: decodeBase64ToBinary(item.data),
 				path: filePath
 			});
 		} else if (item.isBase64Encoded === false && item.data) {
@@ -126,31 +128,62 @@ const processFiles = async (
 		}
 	});
 
-	if (additionalFiles) {
-		const filesArray = Array.isArray(additionalFiles) ? additionalFiles : [additionalFiles];
-		const additionalProcessed = await Promise.all(
-			filesArray.map(async (file) => {
-				try {
-					const response = await fetch(file.filePath);
-					if (!response.ok) {
-						getLogger().warn(`Failed to fetch additional file from URL: ${file.filePath}`);
-						return null;
-					}
-					const fileBlob = await response.blob();
-					const arrayBuffer = await fileBlob.arrayBuffer();
-					return {
-						fileName: file.fileName,
-						content: new Uint8Array(arrayBuffer),
-						path: file.fileName
-					} as ProcessedFile;
-				} catch (error) {
-					getLogger().error(`Error fetching additional file from URL: ${file.filePath}`, error);
+	return processedFiles;
+};
+
+/**
+ * Fetch externally-referenced files over HTTP into `ProcessedFile`s.
+ *
+ * Async and fallible by nature. A failed fetch (network error or non-OK status)
+ * is logged and that file is dropped — the rest still resolve — so one dead URL
+ * degrades the result rather than aborting the whole batch. This swallow is
+ * deliberate and pinned by tests; callers receive only the files that succeeded.
+ *
+ * @param refs - External file references to fetch.
+ * @returns The successfully-fetched files (failures omitted).
+ */
+const fetchRemoteFiles = async (refs: FileBaseInfo[]): Promise<ProcessedFile[]> => {
+	const fetched = await Promise.all(
+		refs.map(async (file) => {
+			try {
+				const response = await fetch(file.filePath);
+				if (!response.ok) {
+					getLogger().warn(`Failed to fetch additional file from URL: ${file.filePath}`);
 					return null;
 				}
-			})
-		);
+				const fileBlob = await response.blob();
+				const arrayBuffer = await fileBlob.arrayBuffer();
+				return {
+					fileName: file.fileName,
+					content: new Uint8Array(arrayBuffer),
+					path: file.fileName
+				} as ProcessedFile;
+			} catch (error) {
+				getLogger().error(`Error fetching additional file from URL: ${file.filePath}`, error);
+				return null;
+			}
+		})
+	);
 
-		processedFiles.push(...additionalProcessed.filter((f): f is ProcessedFile => f !== null));
+	return fetched.filter((f): f is ProcessedFile => f !== null);
+};
+
+/**
+ * Compose the decoded response files with any fetched external files.
+ *
+ * @param dataItems - `FileData` items from the compute response.
+ * @param additionalFiles - Optional external file references to fetch and include.
+ * @returns A Promise resolving to the combined `ProcessedFile` list.
+ */
+const processFiles = async (
+	dataItems: FileData[],
+	additionalFiles: FileBaseInfo[] | FileBaseInfo | null
+): Promise<ProcessedFile[]> => {
+	const processedFiles = decodeResponseFiles(dataItems);
+
+	if (additionalFiles) {
+		const filesArray = Array.isArray(additionalFiles) ? additionalFiles : [additionalFiles];
+		processedFiles.push(...(await fetchRemoteFiles(filesArray)));
 	}
 
 	return processedFiles;

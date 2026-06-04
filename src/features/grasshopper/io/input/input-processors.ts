@@ -1,11 +1,15 @@
 import { RhinoComputeError } from '@/core/errors';
-
-import { preProcessInputDefault } from './input-validators';
-import { PARSERS } from './input-parsers';
 import { getLogger } from '@/core/utils/logger';
 
+import { normalizeDefault } from './normalize-default';
+import { INPUT_TYPE_PARSERS, UNKNOWN_TYPE_FALLBACK } from './input-type-parsers';
+
+import type { BaseInputType, InputParam, InputParamSchema, InputParseError } from '../../types';
+
 /** Canonical paramType for each supported type, keyed by its lowercased form. */
-const CANONICAL_PARAM_TYPES = new Map(Object.keys(PARSERS).map((key) => [key.toLowerCase(), key]));
+const CANONICAL_PARAM_TYPES = new Map(
+	[...INPUT_TYPE_PARSERS.keys()].map((key) => [key.toLowerCase(), key])
+);
 
 /**
  * Returns the canonical casing for a paramType (e.g. "valuelist" → "ValueList"),
@@ -14,77 +18,6 @@ const CANONICAL_PARAM_TYPES = new Map(Object.keys(PARSERS).map((key) => [key.toL
  */
 function canonicalizeParamType(paramType: string): string {
 	return CANONICAL_PARAM_TYPES.get(paramType?.toLowerCase()) ?? paramType;
-}
-
-import type {
-	BaseInputType,
-	BooleanInputType,
-	GeometryInputType,
-	InputParam,
-	NumericInputType,
-	InputParamSchema,
-	TextInputType,
-	ValueListInputType,
-	FileInputType,
-	ColorInputType,
-	InputParseError
-} from '../../types';
-
-/**
- * Creates a safe default InputType when processing fails
- */
-function createSafeDefault(rawInput: InputParamSchema, baseInput: BaseInputType): InputParam {
-	const isList = (rawInput.atMost ?? 1) > 1;
-	switch (rawInput.paramType) {
-		case 'Number':
-		case 'Integer':
-			return {
-				...baseInput,
-				paramType: rawInput.paramType,
-				minimum: rawInput.minimum,
-				maximum: rawInput.maximum,
-				atLeast: rawInput.atLeast,
-				atMost: rawInput.atMost,
-				default: isList ? [0] : 0
-			} as NumericInputType;
-		case 'Boolean':
-			return {
-				...baseInput,
-				paramType: 'Boolean',
-				default: isList ? [false] : false
-			} as BooleanInputType;
-		case 'Text':
-			return {
-				...baseInput,
-				paramType: 'Text',
-				default: isList ? [''] : ''
-			} as TextInputType;
-		case 'ValueList':
-			return {
-				...baseInput,
-				paramType: 'ValueList',
-				values: rawInput.values ?? {},
-				default: isList ? [rawInput.default] : rawInput.default
-			} as ValueListInputType;
-		case 'File':
-			return {
-				...baseInput,
-				paramType: 'File',
-				default: isList ? [null] : null
-			} as FileInputType;
-		case 'Color':
-			return {
-				...baseInput,
-				paramType: 'Color',
-				default: isList ? ['0, 0, 0'] : '0, 0, 0'
-			} as ColorInputType;
-		default:
-			return {
-				...baseInput,
-				paramType: 'Geometry',
-				default: isList ? [null] : null
-			} as GeometryInputType;
-	}
 }
 
 /**
@@ -160,96 +93,29 @@ export function processInputWithError(rawInput: InputParamSchema): {
 
 	// Normalize paramType to its canonical casing so callers can send any case
 	// (e.g. Selva schemas emit lowercase "valueList" while the plugin reports
-	// "ValueList"). Both the PARSERS lookup and the switch below match exactly,
-	// so we canonicalize once up front rather than at each comparison site.
-	rawInput.paramType = canonicalizeParamType(rawInput.paramType);
+	// "ValueList"). The registry is keyed by canonical type.
+	const paramType = canonicalizeParamType(rawInput.paramType);
+
+	// Shared, type-independent step: flatten the raw innerTree default into the
+	// shape the per-type parsers expect (pure — does not mutate rawInput).
+	const schema = normalizeDefault({ ...rawInput, paramType });
+	const parser = INPUT_TYPE_PARSERS.get(paramType);
 
 	try {
-		preProcessInputDefault(rawInput);
-
-		const parser = PARSERS[rawInput.paramType];
 		if (!parser) {
-			throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
+			throw RhinoComputeError.unknownParamType(paramType, rawInput.name);
 		}
-
-		parser(rawInput);
-
-		switch (rawInput.paramType) {
-			case 'Number':
-			case 'Integer':
-				return {
-					input: {
-						...baseInput,
-						paramType: rawInput.paramType,
-						minimum: rawInput.minimum,
-						maximum: rawInput.maximum,
-						atLeast: rawInput.atLeast,
-						atMost: rawInput.atMost,
-						stepSize: rawInput.stepSize,
-						default: rawInput.default as number | undefined
-					} as NumericInputType
-				};
-			case 'Boolean':
-				return {
-					input: {
-						...baseInput,
-						paramType: 'Boolean',
-						default: rawInput.default as boolean | undefined
-					} as BooleanInputType
-				};
-			case 'Text':
-				return {
-					input: {
-						...baseInput,
-						paramType: 'Text',
-						default: rawInput.default as string | undefined
-					} as TextInputType
-				};
-			case 'ValueList':
-				return {
-					input: {
-						...baseInput,
-						paramType: 'ValueList',
-						values: rawInput.values as Record<string, string>,
-						default: rawInput.default as string | undefined
-					} as ValueListInputType
-				};
-			case 'Geometry':
-				return {
-					input: {
-						...baseInput,
-						paramType: rawInput.paramType as 'Geometry',
-						default: rawInput.default as object | string | undefined
-					} as GeometryInputType
-				};
-			case 'File':
-				return {
-					input: {
-						...baseInput,
-						paramType: rawInput.paramType as 'File',
-						acceptedFormats: rawInput.acceptedFormats,
-						default: rawInput.default as object | string | undefined
-					} as FileInputType
-				};
-			case 'Color':
-				return {
-					input: {
-						...baseInput,
-						paramType: 'Color',
-						default: rawInput.default as string | undefined
-					} as ColorInputType
-				};
-			default:
-				throw RhinoComputeError.unknownParamType(rawInput.paramType, rawInput.name);
-		}
+		return { input: parser.parse(schema, baseInput) };
 	} catch (error) {
 		if (error instanceof RhinoComputeError) {
 			getLogger().error(`Validation error for input ${rawInput.name || 'unknown'}:`, error.message);
+			// The parser owns its own fallback; an unknown type falls back to the
+			// geometry-shaped safe default (matching the old behavior).
 			return {
-				input: createSafeDefault(rawInput, baseInput),
+				input: (parser ?? UNKNOWN_TYPE_FALLBACK).fallback(schema, baseInput),
 				error: {
 					inputName: rawInput.name || 'unknown',
-					paramType: rawInput.paramType,
+					paramType,
 					message: error.message,
 					code: error.code
 				}
@@ -261,7 +127,7 @@ export function processInputWithError(rawInput: InputParamSchema): {
 			error instanceof Error ? error.message : String(error),
 			'VALIDATION_ERROR',
 			{
-				context: { paramName: rawInput.name, paramType: rawInput.paramType },
+				context: { paramName: rawInput.name, paramType },
 				originalError: error instanceof Error ? error : new Error(String(error))
 			}
 		);

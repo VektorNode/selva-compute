@@ -1,8 +1,7 @@
 import { ComputeConfig, RhinoComputeError, ErrorCodes } from '@/core';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
-import { camelcaseKeys } from '@/core/utils/camel-case';
 import { warnIfClientSide } from '@/core/utils/warnings';
-import { prepareGrasshopperArgs } from '../compute/solve';
+import { prepareGrasshopperArgs } from '../solve';
 
 import { GrasshopperParsedIO, GrasshopperParsedIORaw, IoResponseSchema } from '../types';
 
@@ -36,7 +35,7 @@ export async function fetchDefinitionIO(
 		);
 	}
 
-	const response = await fetchRhinoCompute<'io'>('io', payload, config);
+	const response = await fetchRhinoCompute<IoResponseSchema>('io', payload, config);
 
 	if (!response || typeof response !== 'object') {
 		throw new RhinoComputeError('Invalid IO response structure', ErrorCodes.INVALID_INPUT, {
@@ -44,13 +43,39 @@ export async function fetchDefinitionIO(
 		});
 	}
 
-	// Convert PascalCase to camelCase
-	const camelCased = camelcaseKeys(response, { deep: true }) as IoResponseSchema;
+	// The Compute8 server fork already serializes the IO schema in camelCase
+	// (`[JsonProperty("paramType")]` etc.) — pinned by the seam snapshot in
+	// tests/contract/server-contract.test.ts. So we read the fields straight
+	// through. A previous deep `camelcaseKeys` here was not only redundant but
+	// corrupted value-list `values` keys — user-authored dropdown labels like
+	// "Option A" were mangled to "optionA" (regression-pinned in
+	// definition-io.casing.test.ts).
+	//
+	// The server also reports definition-LOAD diagnostics on the IO response
+	// (`errors`/`warnings` — e.g. a missing plugin that left inputs unresolved).
+	// Surface them so a degraded input list comes with an explanation instead of
+	// silently looking empty. Only attach when non-empty to keep the common
+	// happy-path result clean.
+	const loadWarnings = nonEmptyStrings(response.warnings);
+	const loadErrors = nonEmptyStrings(response.errors);
 
 	return {
-		inputs: camelCased.inputs,
-		outputs: camelCased.outputs
+		inputs: response.inputs,
+		outputs: response.outputs,
+		...(loadWarnings && { loadWarnings }),
+		...(loadErrors && { loadErrors })
 	};
+}
+
+/**
+ * Coerce a server `errors`/`warnings` array (typed `any[]`) into a clean
+ * `string[]`, or `undefined` when there's nothing to report. Filters non-string
+ * and blank entries defensively.
+ */
+function nonEmptyStrings(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const cleaned = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+	return cleaned.length > 0 ? cleaned : undefined;
 }
 
 /**
@@ -88,8 +113,19 @@ export async function fetchParsedDefinitionIO(
 		config.suppressBrowserWarning ?? config.suppressClientSideWarning
 	);
 
-	const { inputs: rawInputs, outputs } = await fetchDefinitionIO(definition, config);
+	const {
+		inputs: rawInputs,
+		outputs,
+		loadWarnings,
+		loadErrors
+	} = await fetchDefinitionIO(definition, config);
 	const { inputs, parseErrors } = processInputsWithErrors(rawInputs);
 
-	return parseErrors.length > 0 ? { inputs, outputs, parseErrors } : { inputs, outputs };
+	return {
+		inputs,
+		outputs,
+		...(parseErrors.length > 0 && { parseErrors }),
+		...(loadWarnings && { loadWarnings }),
+		...(loadErrors && { loadErrors })
+	};
 }
