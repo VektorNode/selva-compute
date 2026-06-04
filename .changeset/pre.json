@@ -6,6 +6,7 @@
   },
   "changesets": [
     "io-casing-tolerance",
+    "string-default-no-jsonparse",
     "wire-casing-robustness"
   ]
 }
