@@ -1,11 +1,13 @@
 import { ComputeConfig, RhinoComputeError, ErrorCodes } from '@/core';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
+import { readField } from '@/core/utils/read-field';
 import { warnIfClientSide } from '@/core/utils/warnings';
 import { prepareGrasshopperArgs } from '../solve';
 
 import { GrasshopperParsedIO, GrasshopperParsedIORaw, IoResponseSchema } from '../types';
 
 import { processInputsWithErrors } from './input/input-processors';
+import { normalizeInputSchema, normalizeOutputSchema } from './normalize-schema';
 
 /**
  * Fetches raw input/output schemas from a Grasshopper definition.
@@ -43,32 +45,38 @@ export async function fetchDefinitionIO(
 		});
 	}
 
-	// The Compute8 server fork already serializes the IO schema in camelCase
-	// (`[JsonProperty("paramType")]` etc.) — pinned by the seam snapshot in
-	// tests/contract/server-contract.test.ts. So we read the fields straight
-	// through. A previous deep `camelcaseKeys` here was not only redundant but
-	// corrupted value-list `values` keys — user-authored dropdown labels like
-	// "Option A" were mangled to "optionA" (regression-pinned in
-	// definition-io.casing.test.ts).
+	// The `/io` response is only partially camelCased, and how much depends on the
+	// server branch. Upstream-tracking branches (mcneel 8.x/9.x, `8.x.selva`) keep
+	// the C# classes close to source — they carry few/no `[JsonProperty]`, so the
+	// top-level wrapper is PascalCase `Inputs` / `Outputs` and per-param fields are
+	// `ParamType` / `Minimum` / … The VektorNode Compute8 fork camelCases every
+	// field. So we read every field we depend on case-insensitively via `readField`
+	// rather than straight-through. A deep `camelcaseKeys` pass is NOT an option: it
+	// mangled user-authored value-list label keys ("Option A" → "optionA") and item
+	// `data` JSON — which is why per-field reads exist instead (per-input field
+	// normalization lives in normalize-schema.ts; the nested `default` DataTree is
+	// handled by normalize-default.ts).
 	//
 	// The server also reports definition-LOAD diagnostics on the IO response
 	// (`errors`/`warnings` — e.g. a missing plugin that left inputs unresolved).
 	// Surface them so a degraded input list comes with an explanation instead of
 	// silently looking empty. Only attach when non-empty to keep the common
 	// happy-path result clean.
-	const loadWarnings = nonEmptyStrings(response.warnings);
-	const loadErrors = nonEmptyStrings(response.errors);
+	const loadWarnings = nonEmptyStrings(readField(response, 'warnings'));
+	const loadErrors = nonEmptyStrings(readField(response, 'errors'));
 
-	// Guard inputs/outputs to arrays. A server fault can return a 200 whose body
-	// omits these (e.g. a definition-LOAD failure that surfaced as a malformed
-	// success instead of a clean 500), and the downstream `for...of` in
-	// processInputsWithErrors throws "inputs is not iterable". Use Array.isArray
-	// rather than `?? []`: the symptom is non-iterability, so a non-array truthy
+	// Read the top-level Inputs/Outputs case-insensitively, then guard to arrays.
+	// A server fault can also return a 200 whose body omits these (e.g. a load
+	// failure surfacing as malformed-success), and the downstream `for...of` in
+	// processInputsWithErrors throws "inputs is not iterable". Array.isArray (not
+	// `?? []`) is deliberate: the symptom is non-iterability, so a non-array truthy
 	// value (`{}`, a string) must coerce to `[]` too. The loadErrors/loadWarnings
-	// surfaced above explain *why* the list came back empty.
+	// surfaced above explain *why* a list came back empty.
+	const rawInputs = readField(response, 'inputs');
+	const rawOutputs = readField(response, 'outputs');
 	return {
-		inputs: Array.isArray(response.inputs) ? response.inputs : [],
-		outputs: Array.isArray(response.outputs) ? response.outputs : [],
+		inputs: Array.isArray(rawInputs) ? rawInputs.map(normalizeInputSchema) : [],
+		outputs: Array.isArray(rawOutputs) ? rawOutputs.map(normalizeOutputSchema) : [],
 		...(loadWarnings && { loadWarnings }),
 		...(loadErrors && { loadErrors })
 	};
