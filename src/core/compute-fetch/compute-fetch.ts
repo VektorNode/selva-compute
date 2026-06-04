@@ -285,9 +285,29 @@ async function handleResponse(
 					return parsed;
 				}
 
-				// If it's a raw exception from the server (like ArgumentException), include it in the error message
-				if (parsed?.Message) {
-					errorBody = `${parsed.ExceptionType ? parsed.ExceptionType + ': ' : ''}${parsed.Message}\n${parsed.StackTrace || ''}`;
+				// Raw server-side exception. The Compute8 server's exception handler
+				// (compute.geometry Startup.cs) emits:
+				//   { error: "Internal Server Error", message: "<category>: <detail>",
+				//     stackTrace?: string[] }   // stackTrace only when Config.Debug
+				// The actionable part is `message` — surface it, with the optional
+				// stack appended for debugging. We prefer `message`/`error` (current
+				// server) and keep `Message`/`ExceptionType`/`StackTrace` (old
+				// PascalCase .NET shape) as a back-compat fallback so an older server
+				// still produces a useful message.
+				const serverMessage =
+					(typeof parsed?.message === 'string' && parsed.message) ||
+					(typeof parsed?.Message === 'string' && parsed.Message) ||
+					'';
+				const exceptionType =
+					(typeof parsed?.ExceptionType === 'string' && parsed.ExceptionType) || '';
+				const stack = parsed?.stackTrace ?? parsed?.StackTrace;
+				const stackStr = Array.isArray(stack) ? stack.join('\n') : stack || '';
+
+				if (serverMessage) {
+					// Don't repeat the generic "Internal Server Error" label when the
+					// message already carries the real detail.
+					const prefix = exceptionType ? `${exceptionType}: ` : '';
+					errorBody = `${prefix}${serverMessage}${stackStr ? `\n${stackStr}` : ''}`;
 				} else if (parsed?.error) {
 					errorBody =
 						typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error, null, 2);

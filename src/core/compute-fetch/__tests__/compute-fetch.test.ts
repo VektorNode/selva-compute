@@ -120,18 +120,27 @@ describe('fetchRhinoCompute — partial success (HTTP 500 with values)', () => {
 	});
 
 	it('still throws COMPUTATION_ERROR for a 500 with no values', async () => {
-		fetchMock.mockResolvedValueOnce(
+		// Real Compute8 exception shape: { error, message, stackTrace? }. The
+		// detailed `message` must surface to the caller (regression-pinned in
+		// error-surface.test.ts), not be swallowed by the generic "error" label.
+		fetchMock.mockResolvedValue(
 			createMockResponse(null, {
 				ok: false,
 				status: 500,
 				statusText: 'Internal Server Error',
-				body: JSON.stringify({ Message: 'ArgumentException', ExceptionType: 'System.Argument' })
+				body: JSON.stringify({
+					error: 'Internal Server Error',
+					message: 'Invalid argument: bad input'
+				})
 			})
 		);
 		await expect(fetchRhinoCompute('grasshopper', {}, config)).rejects.toMatchObject({
 			code: 'COMPUTATION_ERROR',
 			statusCode: 500
 		});
+		await expect(fetchRhinoCompute('grasshopper', {}, config)).rejects.toThrow(
+			/Invalid argument: bad input/
+		);
 	});
 });
 
