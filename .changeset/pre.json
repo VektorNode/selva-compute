@@ -5,7 +5,6 @@
     "@selvajs/compute": "1.5.3"
   },
   "changesets": [
-    "fix-input-default-casing",
-    "major-compute8-contract-alignment"
+    "wire-casing-robustness"
   ]
 }
