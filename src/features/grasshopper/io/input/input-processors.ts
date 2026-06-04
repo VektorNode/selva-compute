@@ -1,7 +1,7 @@
 import { RhinoComputeError } from '@/core/errors';
 import { getLogger } from '@/core/utils/logger';
 
-import { normalizeDefault } from './normalize-default';
+import { normalizeDefaultWithWarning } from './normalize-default';
 import { INPUT_TYPE_PARSERS, UNKNOWN_TYPE_FALLBACK } from './input-type-parsers';
 
 import type { BaseInputType, InputParam, InputParamSchema, InputParseError } from '../../types';
@@ -97,15 +97,24 @@ export function processInputWithError(rawInput: InputParamSchema): {
 	const paramType = canonicalizeParamType(rawInput.paramType);
 
 	// Shared, type-independent step: flatten the raw innerTree default into the
-	// shape the per-type parsers expect (pure — does not mutate rawInput).
-	const schema = normalizeDefault({ ...rawInput, paramType });
+	// shape the per-type parsers expect (pure — does not mutate rawInput). An
+	// unrecognized default shape nulls the value AND returns a warning so the
+	// drop is surfaced to the client via parseErrors instead of vanishing.
+	const { schema, warning } = normalizeDefaultWithWarning({ ...rawInput, paramType });
+	const defaultWarningError: InputParseError | undefined = warning && {
+		inputName: rawInput.name || 'unknown',
+		paramType,
+		message: warning.message,
+		code: warning.code
+	};
 	const parser = INPUT_TYPE_PARSERS.get(paramType);
 
 	try {
 		if (!parser) {
 			throw RhinoComputeError.unknownParamType(paramType, rawInput.name);
 		}
-		return { input: parser.parse(schema, baseInput) };
+		// A malformed-default warning rides through on the otherwise-successful parse.
+		return { input: parser.parse(schema, baseInput), error: defaultWarningError };
 	} catch (error) {
 		if (error instanceof RhinoComputeError) {
 			getLogger().error(`Validation error for input ${rawInput.name || 'unknown'}:`, error.message);
