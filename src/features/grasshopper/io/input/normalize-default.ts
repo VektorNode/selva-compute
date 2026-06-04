@@ -105,7 +105,12 @@ export function normalizeDefaultWithWarning(input: InputParamSchema): {
 					if (type === 'System.Boolean') {
 						return data.toLowerCase() === 'true';
 					}
-					if (type?.startsWith('Rhino.Geometry') || type === 'System.String') {
+					// Only geometry is JSON-encoded on the wire. A `System.String`
+					// must stay a string: value-list labels routinely start with
+					// `[`/`{` (e.g. `[1,2,3]`), and JSON-parsing them would put a
+					// non-string into the leaf `data`, which the Rhino.Compute
+					// fork's Newtonsoft reader rejects ("Unexpected character ... [").
+					if (type?.startsWith('Rhino.Geometry')) {
 						try {
 							return JSON.parse(data);
 						} catch {

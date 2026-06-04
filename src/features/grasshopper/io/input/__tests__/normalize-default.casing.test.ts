@@ -90,6 +90,30 @@ describe('normalizeDefault — real wire casing (PascalCase InnerTree)', () => {
 		}
 	});
 
+	it('keeps a bracket-leading System.String tree value as a string (no JSON.parse)', () => {
+		// Regression: a multi-value Dynamic_ValueList sends string labels that can
+		// start with `[`/`{`. The 2.0 beta JSON-parsed `System.String` items, turning
+		// `'[1,2,3]'` into a real array on the leaf `data` — which the Rhino.Compute
+		// fork's Newtonsoft reader rejects. String defaults must round-trip unchanged.
+		const { input } = processInputWithError(
+			createInputSchema({
+				paramType: 'Text',
+				treeAccess: true,
+				default: {
+					ParamName: 'Values',
+					InnerTree: {
+						'{0}': [
+							{ type: 'System.String', data: '[1,2,3]' },
+							{ type: 'System.String', data: '{not json' },
+							{ type: 'System.String', data: 'plain' }
+						]
+					}
+				} as any
+			})
+		);
+		expect((input as any).default).toEqual({ '{0}': ['[1,2,3]', '{not json', 'plain'] });
+	});
+
 	it('warns and nulls only a genuinely unknown shape (no tree key at all)', () => {
 		const { input } = processInputWithError(
 			createInputSchema({ paramType: 'Number', default: { somethingElse: 1 } as any })
