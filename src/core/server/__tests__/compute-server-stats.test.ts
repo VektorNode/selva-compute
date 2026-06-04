@@ -204,6 +204,54 @@ describe('getServerStats aggregation', () => {
 	});
 });
 
+describe('purgeCache', () => {
+	it('returns the purged count from { purged: N }', async () => {
+		route({ '/cache/purge': () => res(JSON.stringify({ purged: 17 })) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.purgeCache()).resolves.toBe(17);
+		await stats.dispose();
+	});
+
+	it('POSTs to /cache/purge', async () => {
+		route({ '/cache/purge': () => res(JSON.stringify({ purged: 0 })) });
+		const stats = new ComputeServerStats(SERVER);
+		await stats.purgeCache();
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/cache/purge`);
+		expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
+		await stats.dispose();
+	});
+
+	it('sends the RhinoComputeKey header when configured', async () => {
+		route({ '/cache/purge': () => res(JSON.stringify({ purged: 0 })) });
+		const stats = new ComputeServerStats(SERVER, 'k');
+		await stats.purgeCache();
+		const init = fetchMock.mock.calls[0][1] as RequestInit;
+		expect((init.headers as Record<string, string>)['RhinoComputeKey']).toBe('k');
+		await stats.dispose();
+	});
+
+	it('returns null on a non-2xx response', async () => {
+		route({ '/cache/purge': () => res('', { ok: false, status: 401 }) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.purgeCache()).resolves.toBeNull();
+		await stats.dispose();
+	});
+
+	it('returns null on a non-JSON / unexpected body', async () => {
+		route({ '/cache/purge': () => res('purged') });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.purgeCache()).resolves.toBeNull();
+		await stats.dispose();
+	});
+
+	it('returns null (not throwing) when the network rejects', async () => {
+		fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.purgeCache()).resolves.toBeNull();
+		await stats.dispose();
+	});
+});
+
 describe('disposal', () => {
 	it('throws INVALID_STATE when used after dispose', async () => {
 		const stats = new ComputeServerStats(SERVER);

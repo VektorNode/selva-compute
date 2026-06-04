@@ -89,4 +89,31 @@ export interface ComputeConfig {
 	 * (e.g. on component unmount or when superseding a stale solve).
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Optional callback invoked with the server's per-request `Server-Timing`
+	 * breakdown when the response carries one (the `/grasshopper` solve endpoint
+	 * emits `decode;dur=N, solve;dur=N, encode;dur=N` on every response).
+	 *
+	 * Fires on success only, once per request, before the parsed body is
+	 * returned. The transport stays response-type-agnostic — this is a side
+	 * channel for telemetry, it does not change what a call returns. Use it to
+	 * feed a perf monitor or surface "solve took Nms" without server log access.
+	 */
+	onServerTiming?: (timing: ServerTiming) => void;
+}
+
+/**
+ * Parsed `Server-Timing` metrics from a Compute response. Durations are in
+ * milliseconds. Any metric the server omits is `undefined`. `raw` is the
+ * original header value, preserved so callers can read non-standard metrics.
+ */
+export interface ServerTiming {
+	/** Time the server spent decoding the request (deserialize + load definition). */
+	decode?: number;
+	/** Time spent actually solving the Grasshopper definition. */
+	solve?: number;
+	/** Time spent encoding the response (serialize geometry). */
+	encode?: number;
+	/** The raw `Server-Timing` header value, e.g. `decode;dur=3, solve;dur=120, encode;dur=8`. */
+	raw: string;
 }

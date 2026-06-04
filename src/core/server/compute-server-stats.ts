@@ -178,6 +178,55 @@ export default class ComputeServerStats {
 	}
 
 	/**
+	 * Purge the server's solve-results / URL-data cache.
+	 *
+	 * POSTs to `cache/purge` and returns the number of entries removed, or `null`
+	 * if the request failed. This clears cached solve responses and fetched
+	 * definition-URL data; it does NOT evict the definition cache (active
+	 * `pointer` references stay valid).
+	 *
+	 * **Caveat:** `cache/purge` is forwarded by the rhino.compute proxy to a
+	 * single round-robin-selected child, so in a multi-child deployment one call
+	 * purges one child's cache. Call repeatedly (or size the pool to 1) if you
+	 * need a fleet-wide purge.
+	 *
+	 * @returns Number of entries removed, or `null` on failure.
+	 *
+	 * @example
+	 * ```ts
+	 * const removed = await stats.purgeCache();
+	 * if (removed !== null) console.log(`Purged ${removed} cached solves`);
+	 * ```
+	 */
+	public async purgeCache(): Promise<number | null> {
+		this.ensureNotDisposed();
+
+		try {
+			const response = await fetch(`${this.serverUrl}/cache/purge`, {
+				method: 'POST',
+				headers: this.buildHeaders()
+			});
+
+			if (!response.ok) {
+				getLogger().warn('[ComputeServerStats] Failed to purge cache:', response.status);
+				return null;
+			}
+
+			// Read text-first so a non-JSON body can't throw "body already read".
+			const text = await response.text();
+			try {
+				const json = JSON.parse(text);
+				return typeof json.purged === 'number' ? json.purged : null;
+			} catch {
+				return null;
+			}
+		} catch (err) {
+			getLogger().warn('[ComputeServerStats] Error purging cache:', err);
+			return null;
+		}
+	}
+
+	/**
 	 * Continuously monitor server stats at specified interval.
 	 *
 	 * @param callback - Function called with stats on each interval

@@ -355,11 +355,20 @@ export interface InputParamSchema {
 // ============================================================================
 
 /**
- * Parsed input/output structure with raw schemas
+ * Parsed input/output structure with raw schemas.
+ *
+ * `loadWarnings` / `loadErrors` carry the server's definition-load diagnostics
+ * (missing plugin, broken component, etc.) from the `/io` response. They are
+ * distinct from per-input parse failures (`InputParseError`): these come from
+ * the server loading the definition, those from the client typing an input.
  */
 export interface GrasshopperParsedIORaw {
 	inputs: InputParamSchema[];
 	outputs: OutputParamSchema[];
+	/** Server-side definition-load warnings, if any. */
+	loadWarnings?: string[];
+	/** Server-side definition-load errors, if any (e.g. missing plugin). */
+	loadErrors?: string[];
 }
 
 /**
@@ -390,4 +399,16 @@ export interface GrasshopperParsedIO {
 	inputs: InputParam[];
 	outputs: OutputParamSchema[];
 	parseErrors?: InputParseError[];
+	/**
+	 * Server-side definition-load warnings from the `/io` response (e.g. an
+	 * obsolete component). Surface these so the user understands a degraded IO
+	 * list. Distinct from `parseErrors` (client-side input typing failures).
+	 */
+	loadWarnings?: string[];
+	/**
+	 * Server-side definition-load errors from the `/io` response (e.g. a missing
+	 * plugin that left inputs unresolved). When present, the inputs/outputs may
+	 * be incomplete — the user needs to fix their server/definition.
+	 */
+	loadErrors?: string[];
 }

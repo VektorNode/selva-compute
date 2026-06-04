@@ -1,7 +1,41 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
 import { getLogger } from '../utils/logger';
 
-import type { ComputeConfig, RetryPolicy } from '../types';
+import type { ComputeConfig, RetryPolicy, ServerTiming } from '../types';
+
+// ============================================================================
+// Server-Timing
+// ============================================================================
+
+/**
+ * Parse a `Server-Timing` header value into typed durations (ms).
+ *
+ * Header grammar (RFC 9110 §10.1.10), as emitted by the solve endpoint:
+ *   `decode;dur=3, solve;dur=120, encode;dur=8`
+ *
+ * Returns null when the header is absent or carries no recognizable metric, so
+ * the caller can skip the callback entirely.
+ *
+ * @internal exported for tests
+ */
+export function parseServerTiming(headerValue: string | null): ServerTiming | null {
+	if (!headerValue) return null;
+	const timing: ServerTiming = { raw: headerValue };
+	let sawMetric = false;
+	for (const part of headerValue.split(',')) {
+		const [name, ...params] = part.trim().split(';');
+		const durParam = params.find((p) => p.trim().toLowerCase().startsWith('dur'));
+		if (!durParam) continue;
+		const dur = Number(durParam.split('=')[1]);
+		if (!Number.isFinite(dur)) continue;
+		const key = name.trim().toLowerCase();
+		if (key === 'decode' || key === 'solve' || key === 'encode') {
+			timing[key] = dur;
+			sawMetric = true;
+		}
+	}
+	return sawMetric ? timing : null;
+}
 
 // ============================================================================
 // Retry Policy
@@ -240,7 +274,8 @@ async function handleResponse(
 	requestSize: number,
 	serverUrl: string,
 	startTime: number,
-	debug?: boolean
+	debug?: boolean,
+	onServerTiming?: (timing: ServerTiming) => void
 ): Promise<any> {
 	const responseTime = Math.round(performance.now() - startTime);
 
@@ -324,6 +359,20 @@ async function handleResponse(
 	}
 
 	log(`✅ Request [${requestId}] completed in ${responseTime}ms`, debug);
+
+	// Surface the server's per-request timing breakdown (if it sent one and a
+	// caller is listening). Best-effort: a throwing callback must not fail the
+	// request, since the body parse below is the real result.
+	if (onServerTiming) {
+		const timing = parseServerTiming(response.headers.get('Server-Timing'));
+		if (timing) {
+			try {
+				onServerTiming(timing);
+			} catch (err) {
+				if (debug) log(`   onServerTiming callback threw: ${err}`, true);
+			}
+		}
+	}
 
 	try {
 		return await response.json();
@@ -418,7 +467,8 @@ async function attemptFetch(
 			ctx.requestSize,
 			ctx.config.serverUrl,
 			startTime,
-			ctx.config.debug
+			ctx.config.debug,
+			ctx.config.onServerTiming
 		);
 		return { ok: true, value };
 	} catch (error) {

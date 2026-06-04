@@ -64,7 +64,7 @@ export type { Logger } from './utils/logger';
 export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
 // Configuration
-export type { ComputeConfig, RhinoModelUnit, RetryPolicy } from './types';
+export type { ComputeConfig, RhinoModelUnit, RetryPolicy, ServerTiming } from './types';
 
 // String utilities
 export { toCamelCase, camelcaseKeys } from './utils/camel-case';
