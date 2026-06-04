@@ -4,5 +4,7 @@
   "initialVersions": {
     "@selvajs/compute": "1.5.3"
   },
-  "changesets": []
+  "changesets": [
+    "major-compute8-contract-alignment"
+  ]
 }
