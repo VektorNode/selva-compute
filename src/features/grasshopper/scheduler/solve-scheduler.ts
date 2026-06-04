@@ -3,7 +3,7 @@ import type { RetryPolicy } from '@/core/types';
 import { getLogger } from '@/core/utils/logger';
 
 import type { DataTree, GrasshopperComputeResponse, GrasshopperComputeConfig } from '../types';
-import { hashSolveInput } from './stable-hash';
+import { hashSolveInput, hashDefinition } from './stable-hash';
 
 /**
  * Scheduling mode — controls how concurrent `solve()` calls interact.
@@ -31,6 +31,18 @@ export interface SolveSchedulerOptions {
 	retry?: RetryPolicy;
 	/** Enable response caching keyed by hash of (definition, dataTree). */
 	cache?: boolean | CacheOptions;
+	/**
+	 * Reuse the server's definition cache key so a large (base64/binary)
+	 * definition is uploaded once and subsequent solves reference it by
+	 * `pointer` instead of re-sending the full payload. Hugely cheaper for
+	 * multi-MB definitions on a live UI (slider scrubs, etc.).
+	 *
+	 * Requires a `cacheKeyExecutor` to be supplied (the client wires one). Has no
+	 * effect for URL-pointer definitions (already a reference). On a server-side
+	 * cache miss the executor transparently falls back to a full upload, so this
+	 * is safe to leave on. Default: `true` when a `cacheKeyExecutor` is present.
+	 */
+	reuseServerDefinitionCache?: boolean;
 	/** Lifecycle hooks — fired in order. Errors thrown by hooks are logged, not rethrown. */
 	onStart?: (ctx: SolveContext) => void;
 	onSettle?: (ctx: SolveContext, result: SolveResult) => void;
@@ -87,6 +99,36 @@ export type SolveExecutor = (
 ) => Promise<GrasshopperComputeResponse>;
 
 /**
+ * Cache-key-aware executor. When `cacheKey` is provided, the executor solves by
+ * reference (`pointer: cacheKey`) and falls back to a full upload on a server
+ * cache miss. Always reports the (possibly refreshed) `cacheKey` so the
+ * scheduler can update its definition→key map, plus whether the fast path
+ * `missed` (for telemetry). When `cacheKey` is null it's a first solve — upload
+ * fully and capture the key the server assigns.
+ *
+ * Supplied by the client (which owns the solve primitives); the scheduler stays
+ * decoupled from the transport.
+ */
+export type CacheKeyExecutor = (
+	definition: string | Uint8Array,
+	dataTree: DataTree[],
+	cacheKey: string | null,
+	config: GrasshopperComputeConfig
+) => Promise<{ response: GrasshopperComputeResponse; cacheKey: string | null; missed: boolean }>;
+
+/**
+ * Whether a definition is worth solving by server cache key. Binary and
+ * base64/plain-string definitions are uploaded in full, so referencing them by
+ * key on later solves saves the (potentially huge) payload. An `http(s)://` URL
+ * is already a reference — the server keys it by URL and there's nothing to
+ * re-upload — so the fast path adds no value there.
+ */
+function isReusableDefinition(definition: string | Uint8Array): boolean {
+	if (definition instanceof Uint8Array) return true;
+	return !/^https?:\/\//i.test(definition);
+}
+
+/**
  * Robust scheduler for Grasshopper solves.
  *
  * Sits between your application code and the underlying compute call,
@@ -131,6 +173,12 @@ export class SolveScheduler {
 	private readonly cacheTtl: number;
 	private readonly cache = new Map<string, CacheEntry>();
 
+	/** Optional cache-key-aware executor and whether server-def-cache reuse is on. */
+	private readonly cacheKeyExecutor?: CacheKeyExecutor;
+	private readonly reuseServerDefinitionCache: boolean;
+	/** definition identity → server cache key (`pointer`) learned from past solves. */
+	private readonly serverCacheKeys = new Map<string, string>();
+
 	private readonly onStart?: SolveSchedulerOptions['onStart'];
 	private readonly onSettle?: SolveSchedulerOptions['onSettle'];
 	private readonly onSuperseded?: SolveSchedulerOptions['onSuperseded'];
@@ -150,9 +198,11 @@ export class SolveScheduler {
 	constructor(
 		executor: SolveExecutor,
 		baseConfig: GrasshopperComputeConfig,
-		options: SolveSchedulerOptions = {}
+		options: SolveSchedulerOptions = {},
+		cacheKeyExecutor?: CacheKeyExecutor
 	) {
 		this.executor = executor;
+		this.cacheKeyExecutor = cacheKeyExecutor;
 		this.baseConfig = baseConfig;
 		this.mode = options.mode ?? 'latest-wins';
 		this.maxConcurrent = Math.max(1, options.maxConcurrent ?? (this.mode === 'parallel' ? 4 : 1));
@@ -164,6 +214,11 @@ export class SolveScheduler {
 		const cacheConfig = typeof cacheOpt === 'object' ? cacheOpt : {};
 		this.cacheMax = cacheConfig.maxEntries ?? 50;
 		this.cacheTtl = cacheConfig.ttlMs ?? 0;
+
+		// On by default when the client wired a cache-key executor — it's a pure
+		// win for reusable definitions and falls back safely on a miss.
+		this.reuseServerDefinitionCache =
+			!!cacheKeyExecutor && (options.reuseServerDefinitionCache ?? true);
 
 		this.onStart = options.onStart;
 		this.onSettle = options.onSettle;
@@ -355,7 +410,7 @@ export class SolveScheduler {
 				...(this.retry !== undefined && { retry: this.retry })
 			};
 
-			const response = await this.executor(item.definition, item.dataTree, config);
+			const response = await this.runExecutor(item.definition, item.dataTree, config);
 			const durationMs = performance.now() - startTime;
 
 			if (this.cacheEnabled) this.writeCache(item.ctx.key, response);
@@ -392,6 +447,37 @@ export class SolveScheduler {
 			this.drainNext();
 			this.notify();
 		}
+	}
+
+	/**
+	 * Run the solve, using the server-definition-cache fast path when it's
+	 * enabled and the definition is reusable. Learns/updates the definition's
+	 * server cache key from the result so later solves can reference it.
+	 */
+	private async runExecutor(
+		definition: string | Uint8Array,
+		dataTree: DataTree[],
+		config: GrasshopperComputeConfig
+	): Promise<GrasshopperComputeResponse> {
+		if (
+			!this.cacheKeyExecutor ||
+			!this.reuseServerDefinitionCache ||
+			!isReusableDefinition(definition)
+		) {
+			return this.executor(definition, dataTree, config);
+		}
+
+		const defKey = hashDefinition(definition);
+		const knownKey = this.serverCacheKeys.get(defKey) ?? null;
+
+		const result = await this.cacheKeyExecutor(definition, dataTree, knownKey, config);
+
+		// Record the server's (possibly refreshed) key for next time; drop a stale
+		// one if the server stopped returning a key.
+		if (result.cacheKey) this.serverCacheKeys.set(defKey, result.cacheKey);
+		else this.serverCacheKeys.delete(defKey);
+
+		return result.response;
 	}
 
 	private drainNext(): void {

@@ -28,6 +28,18 @@ named after a concept, it should be the concept named here.
   a second endpoint family can be added without `core` importing any feature.
 - **Scheduler** — orchestrates solves over time (latest-wins / queue / parallel),
   with cancellation, retries, caching, and an observable state surface.
+- **Server definition-cache reuse** — a large (base64/binary) definition is
+  uploaded once; the server returns its `md5_…` cache key as the response
+  `pointer`, and `GrasshopperDefinition.FromUrl` resolves a cache key as a
+  pointer. The scheduler learns that key (keyed by `hashDefinition`, the
+  definition-only identity) and sends `pointer: cacheKey` on later solves of the
+  same definition instead of re-sending the payload — decisive for multi-MB
+  definitions on a live UI. On a server cache miss (`Unable to load grasshopper
+definition`) the `solveByCacheKey` primitive transparently falls back to a full
+  upload and captures the refreshed key. Distinct from both the client response
+  cache (Scheduler, keyed on definition+inputs) and the server `cachesolve`
+  results cache (keyed on the full request body). Off unless a `CacheKeyExecutor`
+  is wired (the client wires one); `reuseServerDefinitionCache: false` opts out.
 - **Response processor** — reads computed values out of a solve response tree.
 - **Decoder** — turns a typed value (system type or Rhino geometry) into a JS
   value. Rhino geometry decoding uses a registry (`registerDecoder`).

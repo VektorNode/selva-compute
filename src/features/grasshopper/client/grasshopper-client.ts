@@ -5,8 +5,13 @@ import { validateServerUrl } from '@/core/server/validate-server-url';
 import { ComputeConfig, RetryPolicy } from '@/core/types';
 
 import { fetchDefinitionIO, fetchParsedDefinitionIO, solveGrasshopperDefinition } from '..';
+import { solveByCacheKey, solveGrasshopperDefinitionWithCacheKey } from '../solve';
 import { GrasshopperComputeConfig, GrasshopperComputeResponse, DataTree } from '../types';
-import { SolveScheduler, SolveSchedulerOptions } from '../scheduler/solve-scheduler';
+import {
+	SolveScheduler,
+	SolveSchedulerOptions,
+	CacheKeyExecutor
+} from '../scheduler/solve-scheduler';
 
 /**
  * Per-call options that override the client's default ComputeConfig values.
@@ -206,7 +211,19 @@ export default class GrasshopperClient {
 			dataTree: DataTree[],
 			config: GrasshopperComputeConfig
 		) => solveGrasshopperDefinition(dataTree, definition, config);
-		return new SolveScheduler(executor, this.config, options);
+
+		// Cache-key-aware executor: solve by `pointer: cacheKey` when known (skips
+		// re-uploading large definitions), capturing/refreshing the key and
+		// falling back to a full upload on a server cache miss.
+		const cacheKeyExecutor: CacheKeyExecutor = (definition, dataTree, cacheKey, config) =>
+			cacheKey === null
+				? solveGrasshopperDefinitionWithCacheKey(dataTree, definition, config).then((r) => ({
+						...r,
+						missed: false
+					}))
+				: solveByCacheKey(dataTree, cacheKey, definition, config);
+
+		return new SolveScheduler(executor, this.config, options, cacheKeyExecutor);
 	}
 
 	/**

@@ -79,9 +79,18 @@ export function fnv1aBytes(bytes: Uint8Array): string {
  * per-solve perf tradeoff.)
  */
 export function hashSolveInput(definition: string | Uint8Array, dataTree: unknown): string {
-	const defKey =
-		typeof definition === 'string'
-			? definition
-			: `u8:${definition.length}:${fnv1aBytes(definition)}`;
-	return fnv1a(`${defKey}|${stableStringify(dataTree)}`);
+	return fnv1a(`${hashDefinition(definition)}|${stableStringify(dataTree)}`);
+}
+
+/**
+ * Stable identity of a definition alone (no inputs) — used to key the
+ * server-cache-key map so the same definition reuses its `pointer` across solves
+ * with different inputs. Same full-content hashing as {@link hashSolveInput}: a
+ * binary definition is hashed over all its bytes so two distinct `.gh` files of
+ * equal length can't share a cache key.
+ */
+export function hashDefinition(definition: string | Uint8Array): string {
+	return typeof definition === 'string'
+		? definition
+		: `u8:${definition.length}:${fnv1aBytes(definition)}`;
 }

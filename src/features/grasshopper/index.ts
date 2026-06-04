@@ -22,9 +22,16 @@ export type {
 	SolveSchedulerOptions,
 	SolveContext,
 	SolveResult,
-	SolveExecutor
+	SolveExecutor,
+	CacheKeyExecutor
 } from './scheduler/solve-scheduler';
-export { hashSolveInput, stableStringify, fnv1a, fnv1aBytes } from './scheduler/stable-hash';
+export {
+	hashSolveInput,
+	hashDefinition,
+	stableStringify,
+	fnv1a,
+	fnv1aBytes
+} from './scheduler/stable-hash';
 
 // ============================================================================
 // COMPUTATION
