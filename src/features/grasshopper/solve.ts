@@ -1,5 +1,7 @@
 import { fetchRhinoCompute, RhinoComputeError } from '@/core';
 import { base64ByteArray, encodeStringToBase64, isBase64 } from '@/core/utils/encoding';
+import { getLogger } from '@/core/utils/logger';
+import { readField } from '@/core/utils/read-field';
 import { warnIfClientSide } from '@/core/utils/warnings';
 
 import {
@@ -22,6 +24,43 @@ const DEFINITION_LOAD_FAILED = 'Unable to load grasshopper definition';
 /** Does this error look like a server-side definition-load miss? */
 function isDefinitionLoadMiss(error: unknown): boolean {
 	return error instanceof RhinoComputeError && error.message.includes(DEFINITION_LOAD_FAILED);
+}
+
+/**
+ * Debug aid: a solve can return successfully yet hand back outputs whose
+ * `InnerTree` is empty (`{}`), meaning that parameter produced nothing — often a
+ * sign the definition didn't actually compute (wrong/missing inputs, a guarded
+ * branch). The names tell you exactly which output was empty so you can trace it
+ * back to the responsible branch.
+ *
+ * Only logs when `debug` is set: an empty output can be legitimate, so this is a
+ * diagnostic, never a hard failure. Reads `ParamName` / `InnerTree`
+ * case-insensitively to stay robust across server-branch casing.
+ *
+ * @internal Exported for testing.
+ */
+export function warnOnEmptyInnerTrees(response: GrasshopperComputeResponse, debug?: boolean): void {
+	if (!debug) return;
+
+	const values = readField<unknown[]>(response, 'values');
+	if (!Array.isArray(values) || values.length === 0) return;
+
+	const empty: string[] = [];
+	for (const param of values) {
+		const innerTree = readField<Record<string, unknown>>(param, 'innerTree');
+		// Treat a missing or empty innerTree as "produced nothing".
+		if (!innerTree || Object.keys(innerTree).length === 0) {
+			empty.push(readField<string>(param, 'paramName') ?? '<unnamed>');
+		}
+	}
+
+	if (empty.length === 0) return;
+
+	const scope = empty.length === values.length ? 'all' : `${empty.length}/${values.length}`;
+	getLogger().warn(
+		`Solve returned empty output(s) (${scope}): ${empty.join(', ')}. ` +
+			`These parameters produced no data — check the definition's inputs and the branch feeding each.`
+	);
 }
 
 /**
@@ -157,12 +196,15 @@ async function runSolve(
 
 	if ('pointer' in result) {
 		const { pointer, ...rest } = result as GrasshopperComputeResponse & { pointer?: unknown };
+		const response = rest as GrasshopperComputeResponse;
+		warnOnEmptyInnerTrees(response, config.debug);
 		return {
-			response: rest as GrasshopperComputeResponse,
+			response,
 			cacheKey: typeof pointer === 'string' ? pointer : null
 		};
 	}
 
+	warnOnEmptyInnerTrees(result, config.debug);
 	return { response: result, cacheKey: null };
 }
 
