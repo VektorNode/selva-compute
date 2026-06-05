@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 2.0.0
+
+### Major Changes
+
+- 5a332c4: Release v2.0.0.
+
 ## 2.0.0-beta.5
 
 ### Patch Changes
