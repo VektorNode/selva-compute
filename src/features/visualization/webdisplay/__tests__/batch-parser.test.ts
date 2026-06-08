@@ -286,7 +286,7 @@ describe('parseMeshBatchObject', () => {
 });
 
 describe('parseMeshBatch (JSON entry point)', () => {
-	it('parses a JSON-stringified MeshBatch end-to-end', async () => {
+	it('parses a JSON-stringified DisplayBatch end-to-end', async () => {
 		const { batch } = buildMeshBatch({ materialCount: 2, meshCount: 6, vertsPerMesh: 4 });
 
 		const meshes = await parseMeshBatch(JSON.stringify(batch), {

@@ -50,14 +50,18 @@ export interface MaterialGroup {
 }
 
 /**
- * Batched mesh data optimized for Three.js rendering.
+ * One Display component's payload, ready for Three.js rendering.
  *
  * `compressedData` contains the binary "SLVA" blob (header + metadata JSON + quantized int16 or
  * float32 vertices + uint32 indices), base64-encoded for transit inside the values JSON envelope.
  * The blob is opaque to the outer JSON: a future binary WebSocket frame can drop the base64 step
  * without changing this shape.
+ *
+ * Today this carries only meshes (the binary blob). It is named `DisplayBatch` rather than
+ * `MeshBatch` because it is the seam through which non-mesh display items (curves, points, and
+ * later labels/icons) also travel — those ride as JSON alongside the mesh blob, not inside it.
  */
-export interface MeshBatch {
+export interface DisplayBatch {
 	/** Array of unique materials */
 	materials: SerializableMaterial[];
 	/** Groups of meshes organized by material */
@@ -68,6 +72,12 @@ export interface MeshBatch {
 	 *  Combined with MeshMetadata.originalIndex to backtrack any mesh to its GH source. */
 	sourceComponentId?: string;
 }
+
+/**
+ * @deprecated Renamed to {@link DisplayBatch} — the payload now carries more than meshes.
+ * This alias keeps existing imports compiling; remove it once consumers migrate.
+ */
+export type MeshBatch = DisplayBatch;
 
 /**
  * Decoded geometry payload from a binary mesh batch blob.

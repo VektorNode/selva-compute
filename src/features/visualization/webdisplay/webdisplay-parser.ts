@@ -126,7 +126,7 @@ async function extractMeshesFromData(
 }
 
 /**
- * Processes a single data branch to extract MeshBatch display meshes.
+ * Processes a single data branch to extract DisplayBatch meshes.
  */
 async function processDataBranch(
 	branch: DataItem[],

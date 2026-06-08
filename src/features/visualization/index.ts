@@ -58,6 +58,8 @@ export type {
 	SerializableMaterial,
 	MeshMetadata,
 	MaterialGroup,
+	DisplayBatch,
+	/** @deprecated Use {@link DisplayBatch}. */
 	MeshBatch,
 	DecompressedMeshData
 } from './webdisplay/types';

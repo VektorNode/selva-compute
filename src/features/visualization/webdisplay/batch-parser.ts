@@ -7,7 +7,7 @@ import { FLAG_FLOAT32, parseBinaryMeshBatch } from './binary-parser';
 
 import type { ParsedBinaryMeshBatch } from './binary-parser';
 import type {
-	MeshBatch,
+	DisplayBatch,
 	MaterialGroup,
 	MeshBatchParsingOptions,
 	SerializableMaterial
@@ -44,7 +44,7 @@ export async function parseMeshBatch(
 
 	try {
 		const parseStart = performance.now();
-		const batch: MeshBatch = JSON.parse(batchJson);
+		const batch: DisplayBatch = JSON.parse(batchJson);
 		const parseTime = performance.now() - parseStart;
 
 		return await parseMeshBatchObject(batch, options, { parseTime, perfStart });
@@ -55,18 +55,18 @@ export async function parseMeshBatch(
 }
 
 /**
- * Parses a MeshBatch object and creates Three.js meshes.
+ * Parses a DisplayBatch object and creates Three.js meshes from its mesh blob.
  *
  * The path is synchronous internally — `parseBinaryMeshBatch` does no IO, just typed-array views
  * over the blob. The function stays `async` so callers don't have to change shape if we move
  * parsing into a worker later.
  *
- * @param batch - MeshBatch object
+ * @param batch - DisplayBatch object
  * @param options - Rendering options
  * @returns Promise resolving to array of Three.js mesh objects
  */
 export async function parseMeshBatchObject(
-	batch: MeshBatch,
+	batch: DisplayBatch,
 	options?: MeshBatchParsingOptions & {
 		/** Scale factor to apply to meshes (e.g., for unit conversion) */
 		scaleFactor?: number;
