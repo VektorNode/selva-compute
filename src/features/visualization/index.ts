@@ -63,3 +63,12 @@ export type {
 	MeshBatch,
 	DecompressedMeshData
 } from './webdisplay/types';
+
+export type {
+	DisplayItem,
+	DisplayCurve,
+	DisplayPoint,
+	DisplayItemBase,
+	DisplayIdentity,
+	DisplayPosition
+} from './display-items/types';

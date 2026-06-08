@@ -1,3 +1,5 @@
+import type { DisplayItem } from '../display-items/types.js';
+
 /**
  * Material properties for Three.js rendering.
  */
@@ -71,6 +73,13 @@ export interface DisplayBatch {
 	/** InstanceGuid of the WebDisplay GH component that produced this batch.
 	 *  Combined with MeshMetadata.originalIndex to backtrack any mesh to its GH source. */
 	sourceComponentId?: string;
+	/**
+	 * Non-mesh display items (curves, points; later labels/icons) — see {@link DisplayItem}.
+	 * Optional: omitted when there are none, so mesh-only batches are unchanged on the wire. These
+	 * ride as JSON alongside the mesh blob and are parsed by the separate `display-items` path, not
+	 * the SLVA mesh parser.
+	 */
+	items?: DisplayItem[];
 }
 
 /**

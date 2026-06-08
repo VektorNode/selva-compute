@@ -274,7 +274,9 @@ function buildMeshesFromParsed(
  *
  * Mirrors the encoder formula: `world = origin + (q + 32767) * scale`. When
  * `applyCoordinateTransform=true` we fold the Rhino Z-up -> Three Y-up shuffle into the same pass
- * (`(x, y, z) -> (x, z, -y)`), saving a second walk over the buffer.
+ * (`(x, y, z) -> (x, z, -y)`), saving a second walk over the buffer. This is the same convention as
+ * `rhinoToThree` in `../coordinate-transform.ts` — inlined here for speed over a large typed array;
+ * keep the two in sync.
  */
 function dequantizeInt16(
 	q: Int16Array,
@@ -313,7 +315,9 @@ function dequantizeInt16(
 
 /**
  * For float32 batches: when no transform is needed we can pass through the parser's view; the
- * caller doesn't mutate it. When the rotation is needed we have to allocate.
+ * caller doesn't mutate it. When the rotation is needed we have to allocate. The rotation is the
+ * same `(x, y, z) -> (x, z, -y)` convention as `rhinoToThree` in `../coordinate-transform.ts`,
+ * inlined here for speed; keep the two in sync.
  */
 function maybeRotateFloat32Vertices(
 	vertices: Float32Array,
