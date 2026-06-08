@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 2.1.0-beta.0
+
+### Minor Changes
+
+- Add display items and DisplayBatch support for visualizing non-mesh objects (curves, points) with coordinate transformation.
+
 ## 2.0.0
 
 ### Major Changes

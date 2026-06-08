@@ -1,0 +1,10 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@selvajs/compute": "2.0.0"
+  },
+  "changesets": [
+    "display-batch-beta"
+  ]
+}

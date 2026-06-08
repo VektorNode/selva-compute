@@ -18,6 +18,8 @@ export {
 	parseMeshBatchBlob
 } from './features/visualization/webdisplay/batch-parser';
 
+export { parseDisplayItems } from './features/visualization/display-items/display-items-parser';
+
 export type {
 	ThreeInitializerOptions,
 	CameraConfig,
@@ -35,3 +37,13 @@ export type {
 	/** @deprecated Use {@link DisplayBatch}. */
 	MeshBatch
 } from './features/visualization/webdisplay/types';
+
+export type { DisplayItemParseOptions } from './features/visualization/display-items/display-items-parser';
+export type {
+	DisplayItem,
+	DisplayCurve,
+	DisplayPoint,
+	DisplayItemBase,
+	DisplayIdentity,
+	DisplayPosition
+} from './features/visualization/display-items/types';
