@@ -1,4 +1,5 @@
 import type { DisplayItem } from '../display-items/types.js';
+import type { RhinoModule } from 'rhino3dm';
 
 /**
  * Material properties for Three.js rendering.
@@ -125,6 +126,11 @@ export interface MeshExtractionOptions {
 	allowScaling?: boolean;
 	/** Apply automatic ground offset positioning (Z=0). Defaults to true. */
 	allowAutoPosition?: boolean;
+	/**
+	 * rhino3dm instance for decoding curve display items. selva-compute does not own the WASM
+	 * instance; the host threads it in. Omit to skip curves (points still render).
+	 */
+	rhino?: RhinoModule;
 	/** Enable verbose logging. Defaults to false. */
 	debug?: boolean;
 }

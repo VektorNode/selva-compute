@@ -81,13 +81,15 @@ export const initThree = function (
 		renderer.dispose();
 
 		scene.traverse((object) => {
-			if (object instanceof THREE.Mesh) {
-				object.geometry?.dispose();
-				if (Array.isArray(object.material)) {
-					object.material.forEach((material) => material.dispose());
-				} else {
-					object.material?.dispose();
-				}
+			// Dispose any renderable (mesh, line, points), not just meshes.
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
+
+			renderable.geometry?.dispose();
+			if (Array.isArray(renderable.material)) {
+				renderable.material.forEach((material) => material.dispose());
+			} else {
+				renderable.material?.dispose();
 			}
 		});
 	};
@@ -530,7 +532,10 @@ function setupEventHandlers(
 		const box = new THREE.Box3();
 
 		scene.traverse((object) => {
-			if (object.visible && object.userData.id !== 'floor' && object instanceof THREE.Mesh) {
+			// Frame any renderable (mesh, line, points) — not just meshes — so curve/point-only
+			// batches are fit to view too. The floor and non-renderable group nodes are excluded.
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (object.visible && object.userData.id !== 'floor' && renderable.geometry) {
 				box.expandByObject(object);
 			}
 		});

@@ -72,3 +72,6 @@ export type {
 	DisplayIdentity,
 	DisplayPosition
 } from './display-items/types';
+
+export { parseDisplayItems } from './display-items/display-items-parser';
+export type { DisplayItemParseOptions } from './display-items/display-items-parser';

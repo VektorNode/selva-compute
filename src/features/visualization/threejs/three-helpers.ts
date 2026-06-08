@@ -31,7 +31,7 @@ const CAMERA_CONFIG = {
  */
 export function updateScene(
 	scene: THREE.Scene,
-	meshes: THREE.Mesh[],
+	meshes: THREE.Object3D[],
 	camera: THREE.PerspectiveCamera,
 	controls: OrbitControls,
 	initialPositionSet: boolean
@@ -40,7 +40,7 @@ export function updateScene(
 
 	if (meshes.length === 0) return;
 
-	// Add new meshes to scene
+	// Add new objects (meshes, lines, points) to scene
 	meshes.forEach((mesh) => {
 		scene.add(mesh);
 	});
@@ -141,17 +141,17 @@ export function parseColor(colorString: string): THREE.Color {
 	}
 }
 
-export function applyOffset(meshes: THREE.Mesh[], offsetY: number): void {
+export function applyOffset(meshes: THREE.Object3D[], offsetY: number): void {
 	meshes.forEach((mesh) => {
 		mesh.position.y -= offsetY;
 	});
 }
 
 /**
- * Computes the combined world-axis-aligned bounding box of a set of meshes.
- * Correctly accounts for mesh transformations (rotation, position, scale).
+ * Computes the combined world-axis-aligned bounding box of a set of objects (meshes, lines, points).
+ * Correctly accounts for transformations (rotation, position, scale).
  */
-export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
+export function computeCombinedBoundingBox(meshes: THREE.Object3D[]): THREE.Box3 {
 	const combinedBoundingBox = new THREE.Box3();
 	if (meshes.length === 0) return combinedBoundingBox;
 	meshes.forEach((mesh) => {
@@ -177,13 +177,16 @@ function clearScene(scene: THREE.Scene): void {
 	topLevel.forEach((object) => {
 		if (object.userData.id === 'floor') return;
 
-		// Recursively dispose all meshes in this subtree
+		// Recursively dispose all renderable objects (meshes, lines, points) in this subtree.
 		object.traverse((child) => {
-			if (!(child instanceof THREE.Mesh)) return;
+			const renderable = child as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
 
-			child.geometry?.dispose();
+			renderable.geometry?.dispose();
 
-			const materials = Array.isArray(child.material) ? child.material : [child.material];
+			const material = renderable.material;
+			if (!material) return;
+			const materials = Array.isArray(material) ? material : [material];
 			materials.forEach((material) => {
 				// Walk only own enumerable properties — `for...in` on a Three.js material
 				// also iterates the prototype chain, which is needlessly expensive.
