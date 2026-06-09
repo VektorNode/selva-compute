@@ -42,6 +42,25 @@ export type RenderConfig = {
 	toneMapping?: THREE.ToneMapping;
 	toneMappingExposure?: number;
 	preserveDrawingBuffer?: boolean;
+	/**
+	 * Enable ground-truth ambient occlusion (GTAO) via a postprocessing pipeline. Default false —
+	 * turning it on switches rendering from `renderer.render` to an EffectComposer, which costs more.
+	 */
+	ambientOcclusion?: boolean;
+	/** AO strength 0–1 when {@link RenderConfig.ambientOcclusion} is on. Default 1. */
+	aoIntensity?: number;
+};
+
+/** Crisp boundary/crease edge overlays on meshes. See `addEdges`. */
+export type EdgesConfig = {
+	/** Auto-attach edge overlays to meshes as they load. Default false (opt-in). */
+	enabled?: boolean;
+	/** Edge color. Default near-black. */
+	color?: THREE.ColorRepresentation;
+	/** Edge thickness in CSS px. Default 1.5. */
+	width?: number;
+	/** Crease angle (degrees): keep edges where faces differ by more than this. Default 30. */
+	thresholdAngle?: number;
 };
 
 export type ControlsConfig = {
@@ -55,6 +74,47 @@ export type ControlsConfig = {
 	maxDistance?: number;
 };
 
+/** Infinite distance-fading reference grid. See `createGrid`. */
+export type GridConfig = {
+	/** Show the grid. Default false (opt-in). */
+	enabled?: boolean;
+	/** Minor cell size in world units (meters). Default 1. */
+	cellSize?: number;
+	/** Minor cells per major line. Default 10. */
+	majorEvery?: number;
+	/** Minor line color. */
+	cellColor?: THREE.ColorRepresentation;
+	/** Major line color. */
+	majorColor?: THREE.ColorRepresentation;
+	/** World radius at which the grid fully fades. Default 100. */
+	fadeDistance?: number;
+	/** Plane the grid lies on. 'y' = horizontal ground. Default 'y'. */
+	plane?: 'x' | 'y' | 'z';
+};
+
+/** Corner nav-cube/axis gizmo that snaps to preset views. See `createViewGizmo`. */
+export type GizmoConfig = {
+	/** Show the gizmo. Default false (opt-in). */
+	enabled?: boolean;
+};
+
+/** Two-click distance measurement tool. See `createMeasureTool`. */
+export type MeasureConfig = {
+	/**
+	 * Create the measurement tool. Default false. Note: this only *builds* the tool (and its label
+	 * overlay); start measuring by calling `measureTool.setEnabled(true)` on the init result.
+	 */
+	enabled?: boolean;
+	/** Snap to a vertex within this many screen px. Default 12. */
+	snapPixels?: number;
+	/** Marker + line color. Default yellow. */
+	color?: THREE.ColorRepresentation;
+	/** CSS class for the distance label. */
+	labelClassName?: string;
+	/** Format the distance number → label text. Default 3 sig-digits + " m". */
+	format?: (distance: number) => string;
+};
+
 export type ThreeInitializerOptions = {
 	sceneScale?: 'mm' | 'cm' | 'm' | 'inches' | 'feet';
 	camera?: CameraConfig;
@@ -63,6 +123,10 @@ export type ThreeInitializerOptions = {
 	floor?: FloorConfig;
 	render?: RenderConfig;
 	controls?: ControlsConfig;
+	grid?: GridConfig;
+	gizmo?: GizmoConfig;
+	edges?: EdgesConfig;
+	measure?: MeasureConfig;
 	events?: EventConfig;
 };
 

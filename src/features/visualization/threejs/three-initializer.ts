@@ -4,6 +4,13 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { getLogger } from '@/core';
 import { ThreeInitializerOptions } from '../types';
+import { createCameraController, type CameraController } from './camera-controller';
+import { createGrid, type Grid } from './grid';
+import { createViewGizmo, type ViewGizmo } from './view-gizmo';
+import { addEdges } from './edges';
+import { createRenderPipeline, type RenderPipeline } from './render-pipeline';
+import { createLabelLayer, type LabelLayer } from './label-layer';
+import { createMeasureTool, type MeasureTool } from './measure';
 
 const defaultUp = new THREE.Vector3(0, 0, 1);
 
@@ -30,6 +37,18 @@ export const initThree = function (
 	camera: THREE.PerspectiveCamera;
 	controls: OrbitControls;
 	renderer: THREE.WebGLRenderer;
+	cameraController: CameraController;
+	grid: Grid | null;
+	gizmo: ViewGizmo | null;
+	/** Two-click distance measurement tool. Null unless `measure.enabled`; `setEnabled(true)` to use. */
+	measureTool: MeasureTool | null;
+	/**
+	 * Attach edge overlays to the meshes under `root` (no-op unless `edges.enabled`). Call after
+	 * loading meshes via `updateScene`, since meshes arrive after init.
+	 */
+	applyEdges: (root: THREE.Object3D) => void;
+	/** Toggle ambient occlusion at runtime — builds or tears down the postprocessing pipeline. */
+	setAmbientOcclusion: (enabled: boolean) => void;
 	dispose: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
@@ -41,6 +60,16 @@ export const initThree = function (
 	const renderer = setupRenderer(canvas, config);
 	const controls = setupControls(camera, canvas, config);
 
+	// Tracks whichever camera (perspective or orthographic) is live; the controller swaps it.
+	// Render loop, resize, and raycasting all read through getActiveCamera so 2D/3D stays coherent.
+	const cameraController = createCameraController({
+		scene,
+		perspective: camera,
+		controls,
+		onActiveCameraChange: () => {}
+	});
+	const getActiveCamera = () => cameraController.getActiveCamera();
+
 	setupEnvironment(scene, config);
 	setupLighting(scene, config);
 
@@ -48,10 +77,76 @@ export const initThree = function (
 		addFloor(scene, config);
 	}
 
+	// Optional CAD aids: an infinite fading grid and the corner nav-cube gizmo. Both opt-in.
+	const grid = config.grid.enabled
+		? createGrid({
+				cellSize: config.grid.cellSize,
+				majorEvery: config.grid.majorEvery,
+				cellColor: config.grid.cellColor,
+				majorColor: config.grid.majorColor,
+				fadeDistance: config.grid.fadeDistance,
+				plane: config.grid.plane
+			})
+		: null;
+	if (grid) scene.add(grid.object);
+
+	const gizmo = config.gizmo.enabled
+		? createViewGizmo({ camera, domElement: canvas, controls, controller: cameraController })
+		: null;
+
+	// HTML label overlay (CSS2D) and the measurement tool built on it. Both opt-in; the label layer
+	// is only created when something needs it (currently the measure tool).
+	const labelContainer = canvas.parentElement ?? canvas;
+	const labelLayer: LabelLayer | null = config.measure.enabled
+		? createLabelLayer(labelContainer, scene)
+		: null;
+	const measureTool: MeasureTool | null =
+		config.measure.enabled && labelLayer
+			? createMeasureTool({
+					canvas,
+					scene,
+					getActiveCamera,
+					labelLayer,
+					options: {
+						snapPixels: config.measure.snapPixels,
+						color: config.measure.color,
+						labelClassName: config.measure.labelClassName,
+						format: config.measure.format
+					}
+				})
+			: null;
+
 	const eventHandlers =
 		config.events.enableEventHandlers !== false
-			? setupEventHandlers(canvas, scene, camera, controls, config)
+			? setupEventHandlers(canvas, scene, getActiveCamera, camera, controls, config)
 			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
+
+	// Capture-phase interceptors that pre-empt scene selection. Order: an active measurement claims
+	// the click first, then the gizmo. stopImmediatePropagation keeps the selection handler from
+	// also firing. (Both run in capture so they see the event before the bubble-phase selection.)
+	const handleToolClick = (event: MouseEvent) => {
+		if (measureTool?.handleClick(event)) {
+			event.stopImmediatePropagation();
+			return;
+		}
+		if (gizmo?.handleClick(event)) {
+			event.stopImmediatePropagation();
+		}
+	};
+	if (gizmo || measureTool) {
+		canvas.addEventListener('click', handleToolClick, { capture: true });
+	}
+
+	// Edge overlays: bind the configured options into a closure the consumer calls after loading
+	// meshes. Always applies when called explicitly (the `edges.enabled` flag governs whether the
+	// host *intends* edges, but an explicit call should never be silently ignored).
+	const applyEdges = (root: THREE.Object3D) => {
+		addEdges(root, {
+			color: config.edges.color,
+			width: config.edges.width,
+			thresholdAngle: config.edges.thresholdAngle
+		});
+	};
 
 	const parent = canvas.parentElement;
 	const getCanvasSize = () =>
@@ -59,15 +154,56 @@ export const initThree = function (
 			? { width: parent.clientWidth, height: parent.clientHeight }
 			: { width: window.innerWidth, height: window.innerHeight };
 
+	// Optional AO postprocessing pipeline. Held in a mutable so it can be toggled at runtime
+	// (setAmbientOcclusion below); the loop reads it through getRenderPipeline each frame. When null,
+	// the loop uses the plain renderer.render path. Retargeted to the active camera every frame.
+	let renderPipeline: RenderPipeline | null = null;
+
+	const buildPipeline = (): RenderPipeline => {
+		const { width, height } = getCanvasSize();
+		const pixelRatio = Math.min(window.devicePixelRatio, 2);
+		const pipeline = createRenderPipeline(
+			renderer,
+			scene,
+			getActiveCamera(),
+			Math.max(1, width),
+			Math.max(1, height),
+			{
+				toneMapping: config.render.toneMapping ?? THREE.NeutralToneMapping,
+				toneMappingExposure: config.render.toneMappingExposure ?? 1,
+				aoIntensity: config.render.aoIntensity
+			}
+		);
+		pipeline.setSize(Math.max(1, width), Math.max(1, height), pixelRatio);
+		return pipeline;
+	};
+
+	const setAmbientOcclusion = (enabled: boolean) => {
+		if (enabled && !renderPipeline) {
+			renderPipeline = buildPipeline();
+		} else if (!enabled && renderPipeline) {
+			renderPipeline.dispose();
+			renderPipeline = null;
+		}
+	};
+
+	if (config.render.ambientOcclusion) renderPipeline = buildPipeline();
+
 	// Resize checked every frame so buffer resize and render happen in the same frame,
 	// preventing visible blank frames on resize
 	const { animate, dispose: disposeAnimation } = createAnimationLoop(
 		renderer,
 		scene,
 		camera,
+		getActiveCamera,
+		cameraController,
 		controls,
 		getCanvasSize,
-		config.events.onFrame
+		config.events.onFrame,
+		grid,
+		gizmo,
+		() => renderPipeline,
+		labelLayer
 	);
 	animate();
 
@@ -77,6 +213,14 @@ export const initThree = function (
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
+		if (gizmo || measureTool) {
+			canvas.removeEventListener('click', handleToolClick, { capture: true });
+		}
+		measureTool?.dispose();
+		labelLayer?.dispose();
+		gizmo?.dispose();
+		grid?.dispose();
+		renderPipeline?.dispose();
 		controls.dispose();
 		renderer.dispose();
 
@@ -99,6 +243,12 @@ export const initThree = function (
 		camera,
 		controls,
 		renderer,
+		cameraController,
+		grid,
+		gizmo,
+		measureTool,
+		applyEdges,
+		setAmbientOcclusion,
 		dispose,
 		fitToView: eventHandlers.fitToView,
 		clearSelection: eventHandlers.clearSelection
@@ -216,7 +366,9 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			pixelRatio: options.render?.pixelRatio || Math.min(window.devicePixelRatio, 2),
 			toneMapping: options.render?.toneMapping || THREE.NeutralToneMapping,
 			toneMappingExposure: options.render?.toneMappingExposure || 1,
-			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false
+			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false,
+			ambientOcclusion: options.render?.ambientOcclusion ?? false,
+			aoIntensity: options.render?.aoIntensity ?? 1
 		},
 		controls: {
 			enableDamping: options.controls?.enableDamping ?? false,
@@ -227,6 +379,35 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			enablePan: options.controls?.enablePan ?? true,
 			minDistance: options.controls?.minDistance || defaults.minDistance,
 			maxDistance: options.controls?.maxDistance || Infinity
+		},
+		grid: {
+			// Defaults mirror createGrid's so the two never drift.
+			enabled: options.grid?.enabled ?? false,
+			cellSize: options.grid?.cellSize ?? 1,
+			majorEvery: options.grid?.majorEvery ?? 10,
+			cellColor: options.grid?.cellColor ?? 0x888888,
+			majorColor: options.grid?.majorColor ?? 0x444444,
+			fadeDistance: options.grid?.fadeDistance ?? 100,
+			plane: options.grid?.plane ?? 'y'
+		},
+		gizmo: {
+			enabled: options.gizmo?.enabled ?? false
+		},
+		edges: {
+			// Defaults mirror addEdges' so the two never drift.
+			enabled: options.edges?.enabled ?? false,
+			color: options.edges?.color ?? 0x222222,
+			width: options.edges?.width ?? 1.5,
+			thresholdAngle: options.edges?.thresholdAngle ?? 30
+		},
+		measure: {
+			// Visual defaults live in createMeasureTool; only `enabled` needs a value here, the rest
+			// pass through (undefined → the tool's own default).
+			enabled: options.measure?.enabled ?? false,
+			snapPixels: options.measure?.snapPixels,
+			color: options.measure?.color,
+			labelClassName: options.measure?.labelClassName,
+			format: options.measure?.format
 		},
 		events: {
 			onBackgroundClicked: options.events?.onBackgroundClicked,
@@ -242,6 +423,22 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			onFrame: options.events?.onFrame
 		}
 	};
+}
+
+/**
+ * Viewer aids (grid, floor, label overlay, measure markers) are not scene *content* — exclude them
+ * from fit-to-view bounds and other content queries. Tagged via `userData.id` at creation.
+ */
+const VIEWER_AID_IDS = new Set(['grid', 'floor', 'label-layer', 'measure']);
+function isViewerAid(object: THREE.Object3D): boolean {
+	let current: THREE.Object3D | null = object;
+	while (current) {
+		if (typeof current.userData.id === 'string' && VIEWER_AID_IDS.has(current.userData.id)) {
+			return true;
+		}
+		current = current.parent;
+	}
+	return false;
 }
 
 function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
@@ -289,9 +486,15 @@ function createAnimationLoop(
 	renderer: THREE.WebGLRenderer,
 	scene: THREE.Scene,
 	camera: THREE.PerspectiveCamera,
+	getActiveCamera: () => THREE.Camera,
+	cameraController: CameraController,
 	controls: OrbitControls,
 	getCanvasSize: () => { width: number; height: number },
-	onFrame?: (delta: number) => void
+	onFrame?: (delta: number) => void,
+	grid?: Grid | null,
+	gizmo?: ViewGizmo | null,
+	getRenderPipeline?: () => RenderPipeline | null,
+	labelLayer?: LabelLayer | null
 ): { animate: () => void; dispose: () => void } {
 	let animationId: number | null = null;
 	let lastTime = performance.now();
@@ -309,6 +512,12 @@ function createAnimationLoop(
 			renderer.setSize(width, height, false);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
+			// Reshape the orthographic frustum too, if it's the active projection.
+			cameraController.updateAspect(width, height);
+			// Keep the AO composer's render targets in step with the canvas.
+			getRenderPipeline?.()?.setSize(width, height, pixelRatio);
+			// CSS2D overlay matches the canvas's CSS size (not the pixel-ratio buffer size).
+			labelLayer?.setSize(width, height);
 		}
 	};
 
@@ -325,9 +534,30 @@ function createAnimationLoop(
 			controls.update();
 		}
 
+		// Keep the grid centered on the camera so it reads as infinite.
+		if (grid) grid.update(getActiveCamera().position);
+
+		// Advance the gizmo's fade/spin animation (no-op when idle).
+		if (gizmo) gizmo.update(delta);
+
 		onFrame?.(delta);
 
-		renderer.render(scene, camera);
+		const activeCamera = getActiveCamera();
+		const renderPipeline = getRenderPipeline?.();
+		if (renderPipeline) {
+			// AO path: composer owns the render. Retarget to the active camera in case 2D/3D swapped.
+			renderPipeline.setCamera(activeCamera);
+			renderPipeline.render(delta);
+		} else {
+			renderer.render(scene, activeCamera);
+		}
+
+		// HTML labels follow their 3D anchors — render the DOM overlay against the active camera.
+		if (labelLayer) labelLayer.render(scene, activeCamera);
+
+		// The gizmo draws as an overlay in a corner viewport with its own clear; render it last so it
+		// sits on top of the scene.
+		if (gizmo) gizmo.render(renderer);
 	};
 
 	const dispose = () => {
@@ -345,6 +575,11 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 		new HDRLoader().load(
 			config.environment.hdrPath || '/baseHDR.hdr',
 			function (envMap) {
+				if (!envMap?.image) {
+					getLogger().warn('HDR loaded without image data; skipping environment map.');
+					config.events.onReady?.();
+					return;
+				}
 				envMap.mapping = THREE.EquirectangularReflectionMapping;
 				scene.environment = envMap;
 				if (config.environment.showEnvironment) {
@@ -502,6 +737,7 @@ function setupRenderer(
 function setupEventHandlers(
 	canvas: HTMLCanvasElement,
 	scene: THREE.Scene,
+	getActiveCamera: () => THREE.Camera,
 	camera: THREE.PerspectiveCamera,
 	controls: OrbitControls,
 	config: Required<ThreeInitializerOptions>
@@ -533,9 +769,11 @@ function setupEventHandlers(
 
 		scene.traverse((object) => {
 			// Frame any renderable (mesh, line, points) — not just meshes — so curve/point-only
-			// batches are fit to view too. The floor and non-renderable group nodes are excluded.
+			// batches are fit to view too. Viewer aids are excluded: the grid (a huge plane that
+			// tracks the camera) would otherwise dominate the bounds and blow up the fit distance;
+			// the floor, label-layer, and measure markers aren't content either.
 			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
-			if (object.visible && object.userData.id !== 'floor' && renderable.geometry) {
+			if (object.visible && !isViewerAid(object) && renderable.geometry) {
 				box.expandByObject(object);
 			}
 		});
@@ -554,7 +792,12 @@ function setupEventHandlers(
 
 		distance *= 1.5;
 
-		const direction = camera.position.clone().sub(controls.target).normalize();
+		// View direction from the current camera→target. If those coincide (camera sitting on its
+		// target, e.g. after a degenerate fit), fall back to a sensible 3/4 iso so we never produce a
+		// zero/NaN direction that collapses the view.
+		const direction = camera.position.clone().sub(controls.target);
+		if (direction.lengthSq() < 1e-12) direction.set(0.8, 1, 1.2);
+		direction.normalize();
 		camera.position.copy(center.clone().add(direction.multiplyScalar(distance)));
 
 		controls.target.copy(center);
@@ -593,7 +836,7 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-		raycaster.setFromCamera(mouse, camera);
+		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)
 			.filter((i) => isFullyVisible(i.object));
@@ -634,7 +877,7 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-		raycaster.setFromCamera(mouse, camera);
+		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)
 			.filter((i) => isFullyVisible(i.object));

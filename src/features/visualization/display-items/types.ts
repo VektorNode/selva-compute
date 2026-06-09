@@ -46,13 +46,17 @@ export interface DisplayPosition {
 
 /**
  * A curve shipped as Rhino-native JSON (`curve.ToNurbsCurve().ToJSON()`), decoded via rhino3dm and
- * tessellated to a `THREE.Line` on the web.
+ * tessellated to a fat `Line2` on the web (so {@link DisplayCurve.width} is honoured).
  */
 export interface DisplayCurve extends DisplayItemBase {
 	kind: 'curve';
 	/** Rhino CommonObject JSON for the curve. */
 	json: string;
-	// Future: width?: number — fat-line thickness in px. Add here, parser reads it, nothing else moves.
+	/**
+	 * Line thickness in CSS pixels (screen-space, constant regardless of zoom). Rendered via a fat
+	 * `Line2`, so unlike `THREE.Line` this is actually honoured. Omitted → viewer default.
+	 */
+	width?: number;
 }
 
 /** A single point, shipped raw (no rhino3dm decode), rendered as one vertex of a `THREE.Points`. */
