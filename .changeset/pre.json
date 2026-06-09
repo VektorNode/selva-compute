@@ -5,6 +5,9 @@
     "@selvajs/compute": "2.0.0"
   },
   "changesets": [
-    "viewer-tools-public-exports"
+    "measure-tool-readability",
+    "unify-coordinate-frame-zup",
+    "viewer-tools-public-exports",
+    "viewer-up-axis-aware"
   ]
 }
