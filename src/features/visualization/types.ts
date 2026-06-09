@@ -111,8 +111,11 @@ export type MeasureConfig = {
 	color?: THREE.ColorRepresentation;
 	/** CSS class for the distance label. */
 	labelClassName?: string;
-	/** Format the distance number → label text. Default 3 sig-digits + " m". */
-	format?: (distance: number) => string;
+	/**
+	 * Format the measurement → label text. Receives the straight-line `distance` and per-axis `delta`.
+	 * Default renders the total plus a Δx/Δy/Δz breakdown.
+	 */
+	format?: (distance: number, delta: THREE.Vector3) => string;
 };
 
 export type ThreeInitializerOptions = {

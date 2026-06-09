@@ -58,7 +58,8 @@ function addMesh(geo: THREE.BufferGeometry, name: string, hue: number) {
 		})
 	);
 	mesh.name = name;
-	mesh.position.set((Math.random() - 0.5) * 8, 0.75, (Math.random() - 0.5) * 8);
+	// Scene is Z-up: scatter across the floor (X/Y) and lift along Z so meshes rest on it.
+	mesh.position.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.75);
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	pg.addObjects([mesh]);
@@ -69,12 +70,14 @@ function addMesh(geo: THREE.BufferGeometry, name: string, hue: number) {
 function randomScene() {
 	pg.clearObjects();
 	meshCount = 0;
+	// Three's cylinder/cone/torus are built Y-up; rotate them into the Z-up scene so they stand on
+	// the grid instead of lying on their sides.
 	const geos: Array<() => THREE.BufferGeometry> = [
 		() => new THREE.BoxGeometry(1 + Math.random(), 1 + Math.random(), 1 + Math.random()),
 		() => new THREE.SphereGeometry(0.4 + Math.random() * 0.6, 24, 24),
-		() => new THREE.CylinderGeometry(0.3, 0.5, 1 + Math.random(), 16),
-		() => new THREE.TorusGeometry(0.5, 0.2, 12, 48),
-		() => new THREE.ConeGeometry(0.5, 1.5, 16)
+		() => new THREE.CylinderGeometry(0.3, 0.5, 1 + Math.random(), 16).rotateX(Math.PI / 2),
+		() => new THREE.TorusGeometry(0.5, 0.2, 12, 48).rotateX(Math.PI / 2),
+		() => new THREE.ConeGeometry(0.5, 1.5, 16).rotateX(Math.PI / 2)
 	];
 	for (let i = 0; i < 12; i++) {
 		addMesh(geos[Math.floor(Math.random() * geos.length)](), `Mesh_${meshCount}`, i / 12);
@@ -90,7 +93,11 @@ pg.addButton('Add Sphere', () =>
 	addMesh(new THREE.SphereGeometry(0.6, 32, 32), `Sphere_${meshCount}`, Math.random())
 );
 pg.addButton('Add Torus', () =>
-	addMesh(new THREE.TorusGeometry(0.6, 0.25, 16, 64), `Torus_${meshCount}`, Math.random())
+	addMesh(
+		new THREE.TorusGeometry(0.6, 0.25, 16, 64).rotateX(Math.PI / 2),
+		`Torus_${meshCount}`,
+		Math.random()
+	)
 );
 pg.addButton('Random Scene', randomScene);
 pg.addButton('Clear', () => {

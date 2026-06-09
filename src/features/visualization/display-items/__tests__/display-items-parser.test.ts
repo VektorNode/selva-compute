@@ -34,7 +34,7 @@ describe('parseDisplayItems', () => {
 		expect(parseDisplayItems([])).toEqual([]);
 	});
 
-	it('builds a THREE.Points from a point item and applies the Rhino→Three transform', () => {
+	it('builds a THREE.Points from a point item in the scene frame (Rhino Z-up, no rotation)', () => {
 		const items: DisplayItem[] = [
 			{ kind: 'point', id: 'c:0', name: 'P0', layer: '', position: { X: 1, Y: 2, Z: 3 } }
 		];
@@ -47,12 +47,12 @@ describe('parseDisplayItems', () => {
 		expect(points.name).toBe('P0');
 		expect(points.userData.id).toBe('c:0');
 
-		// (x, y, z) -> (x, z, -y)
+		// Three scene IS Rhino's Z-up frame — the point lands at its Rhino coordinates unchanged.
 		const pos = points.geometry.getAttribute('position');
-		expect([pos.getX(0), pos.getY(0), pos.getZ(0)]).toEqual([1, 3, -2]);
+		expect([pos.getX(0), pos.getY(0), pos.getZ(0)]).toEqual([1, 2, 3]);
 	});
 
-	it('passes position through unchanged when applyTransforms is false', () => {
+	it('lands at Rhino coordinates regardless of the legacy applyTransforms flag', () => {
 		const items: DisplayItem[] = [
 			{ kind: 'point', id: 'c:0', name: 'P', layer: '', position: { X: 1, Y: 2, Z: 3 } }
 		];

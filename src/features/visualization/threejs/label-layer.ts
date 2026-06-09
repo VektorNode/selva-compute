@@ -71,7 +71,24 @@ export function createLabelLayer(container: HTMLElement, scene: THREE.Scene): La
 	const addLabel = (text: string, position: THREE.Vector3, className?: string): LabelHandle => {
 		const el = document.createElement('div');
 		el.textContent = text;
-		if (className) el.className = className;
+		if (className) {
+			el.className = className;
+		} else {
+			// Default styling that stays legible on any background (light or dark scene/page): a dark
+			// translucent pill with light text. Callers wanting their own look pass a className, which
+			// opts out of all of this. Kept inline so the layer needs no external stylesheet.
+			Object.assign(el.style, {
+				padding: '2px 6px',
+				borderRadius: '4px',
+				background: 'rgba(20, 20, 20, 0.78)',
+				color: '#fff',
+				font: '12px/1.3 system-ui, sans-serif',
+				// `pre` so a multi-line readout (e.g. total + per-axis deltas) keeps its line breaks.
+				whiteSpace: 'pre',
+				textAlign: 'center',
+				userSelect: 'none'
+			} satisfies Partial<CSSStyleDeclaration>);
+		}
 		// Individual labels stay non-interactive by default (the overlay is too, but be explicit so a
 		// caller that opts a label into pointer-events doesn't get surprised by inherited none).
 		el.style.pointerEvents = 'none';

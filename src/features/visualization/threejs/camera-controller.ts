@@ -34,6 +34,13 @@ export interface CameraController {
 	toggleProjection(): CameraProjection;
 	/** Move the camera to a preset orientation, framing current scene content. Animated. */
 	setView(preset: ViewPreset, animate?: boolean): void;
+	/**
+	 * Frame current content viewed from `direction` (a world-space vector from target toward camera).
+	 * Like {@link setView} but takes an explicit direction — used by the nav-cube, whose clicked axis
+	 * is a world axis, not a named preset. Pole directions are nudged off-axis to avoid the orbit
+	 * singularity.
+	 */
+	setViewDirection(direction: THREE.Vector3, animate?: boolean): void;
 	/** Enable/disable orbit rotation at runtime (pan/zoom unaffected). */
 	setRotateEnabled(enabled: boolean): void;
 	/** Whether rotation is currently enabled. */
@@ -48,24 +55,56 @@ interface CameraControllerDeps {
 	controls: OrbitControls;
 	/** Called whenever the active camera identity changes, so callers can re-point the renderer/raycaster. */
 	onActiveCameraChange: (camera: THREE.Camera) => void;
+	/**
+	 * The scene's up axis. Presets, the orthographic camera's up, and the iso direction are all derived
+	 * from this so the controller is correct in any up convention (Three's native Y-up, Rhino's Z-up, …)
+	 * without hardcoding an axis. Defaults to Y-up.
+	 */
+	up?: THREE.Vector3;
 }
 
-/** Direction (from target toward camera) for each preset, in Three Y-up. Unit vectors. */
-const VIEW_DIRECTIONS: Record<ViewPreset, THREE.Vector3> = {
-	top: new THREE.Vector3(0, 1, 0),
-	bottom: new THREE.Vector3(0, -1, 0),
-	front: new THREE.Vector3(0, 0, 1),
-	back: new THREE.Vector3(0, 0, -1),
-	right: new THREE.Vector3(1, 0, 0),
-	left: new THREE.Vector3(-1, 0, 0),
-	iso: new THREE.Vector3(0.8, 1, 1.2).normalize()
-};
+/**
+ * Build the seven preset view directions (from target toward camera, unit vectors) for a given up
+ * axis. "Top" looks straight down the up axis; front/back/left/right are the two axes orthogonal to
+ * up, with "front" chosen as the more conventional facing for that up convention; iso is a 3/4 blend.
+ *
+ * Deriving these from `up` (instead of a fixed Y-up table) is what keeps Top/Front/… meaningful for
+ * Z-up Rhino scenes — otherwise "Top" would frame the side of the model.
+ */
+function buildViewDirections(up: THREE.Vector3): Record<ViewPreset, THREE.Vector3> {
+	const u = up.clone().normalize();
+
+	// Two axes spanning the ground plane (orthogonal to up). `forward` is the camera-facing "front"
+	// direction, `right` completes a right-handed basis with up.
+	const worldZ = new THREE.Vector3(0, 0, 1);
+	const worldY = new THREE.Vector3(0, 1, 0);
+	// Pick a seed not parallel to up to derive an in-plane axis from.
+	const seed = Math.abs(u.dot(worldZ)) > 0.9 ? worldY : worldZ;
+	const right = new THREE.Vector3().crossVectors(u, seed).normalize();
+	const forward = new THREE.Vector3().crossVectors(right, u).normalize();
+
+	return {
+		top: u.clone(),
+		bottom: u.clone().negate(),
+		front: forward.clone(),
+		back: forward.clone().negate(),
+		right: right.clone(),
+		left: right.clone().negate(),
+		// 3/4 iso: blend front, right, and up so it reads as a corner view regardless of up axis.
+		iso: forward.clone().multiplyScalar(1.2).add(right.clone()).add(u.clone()).normalize()
+	};
+}
 
 export function createCameraController(deps: CameraControllerDeps): CameraController {
 	const { scene, perspective, controls, onActiveCameraChange } = deps;
 
+	// Up axis drives presets, the ortho camera's up, and the iso direction. Prefer an explicit `up`,
+	// fall back to the perspective camera's current up (which initThree sets to sceneUp).
+	const up = (deps.up ?? perspective.up).clone().normalize();
+	const VIEW_DIRECTIONS = buildViewDirections(up);
+
 	const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, perspective.near, perspective.far);
-	ortho.up.copy(perspective.up);
+	ortho.up.copy(up);
 
 	let projection: CameraProjection = 'perspective';
 	let aspect = perspective.aspect;
@@ -107,7 +146,7 @@ export function createCameraController(deps: CameraControllerDeps): CameraContro
 		onActiveCameraChange(active());
 	};
 
-	const setView = (preset: ViewPreset, animate = true) => {
+	const setViewDirection = (direction: THREE.Vector3, animate = true) => {
 		const box = computeContentBox(scene);
 		const center = box.isEmpty() ? controls.target.clone() : box.getCenter(new THREE.Vector3());
 		const size = box.isEmpty() ? new THREE.Vector3(1, 1, 1) : box.getSize(new THREE.Vector3());
@@ -117,7 +156,10 @@ export function createCameraController(deps: CameraControllerDeps): CameraContro
 		const fov = perspective.fov * (Math.PI / 180);
 		const distance = (maxDim / (2 * Math.tan(fov / 2))) * 1.5;
 
-		const dir = VIEW_DIRECTIONS[preset];
+		// A direction along the up axis (top/bottom) puts the view direction parallel to camera.up — an
+		// OrbitControls singularity (the next mouse drag flips the view 180° and the gizmo jitters).
+		// Tilt it a hair off-axis so the orbit basis stays well-defined.
+		const dir = nudgeOffPole(direction, up);
 		const toPosition = center.clone().add(dir.clone().multiplyScalar(distance));
 
 		const cam = active();
@@ -131,6 +173,10 @@ export function createCameraController(deps: CameraControllerDeps): CameraContro
 			if (projection === 'orthographic') syncOrthoFrustum();
 			controls.update();
 		}
+	};
+
+	const setView = (preset: ViewPreset, animate = true) => {
+		setViewDirection(VIEW_DIRECTIONS[preset], animate);
 	};
 
 	const setRotateEnabled = (enabled: boolean) => {
@@ -151,6 +197,7 @@ export function createCameraController(deps: CameraControllerDeps): CameraContro
 			return projection;
 		},
 		setView,
+		setViewDirection,
 		setRotateEnabled,
 		isRotateEnabled: () => controls.enableRotate,
 		updateAspect
@@ -186,6 +233,28 @@ function computeContentBox(scene: THREE.Scene): THREE.Box3 {
 		}
 	});
 	return computeCombinedBoundingBox(renderables);
+}
+
+/**
+ * If a view direction is (nearly) parallel to the up axis — i.e. top/bottom — tilt it a fraction of
+ * a degree toward an in-plane axis. Looking exactly down `up` is an OrbitControls singularity: the
+ * camera direction coincides with `camera.up`, so azimuth is undefined and the first drag snaps the
+ * view. A ~0.5° tilt is imperceptible but keeps the orbit basis well-defined. Non-pole presets pass
+ * through unchanged.
+ */
+function nudgeOffPole(dir: THREE.Vector3, up: THREE.Vector3): THREE.Vector3 {
+	const u = up.clone().normalize();
+	const d = dir.clone().normalize();
+	if (Math.abs(d.dot(u)) < 0.9999) return dir;
+
+	// Derive an in-plane axis (orthogonal to up) to lean toward, same construction as the presets.
+	const seed =
+		Math.abs(u.dot(new THREE.Vector3(0, 0, 1))) > 0.9
+			? new THREE.Vector3(0, 1, 0)
+			: new THREE.Vector3(0, 0, 1);
+	const inPlane = new THREE.Vector3().crossVectors(u, seed).normalize();
+	const tilt = (0.5 * Math.PI) / 180; // ~0.5°
+	return d.multiplyScalar(Math.cos(tilt)).add(inPlane.multiplyScalar(Math.sin(tilt))).normalize();
 }
 
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);

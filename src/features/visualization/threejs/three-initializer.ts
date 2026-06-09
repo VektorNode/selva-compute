@@ -14,6 +14,16 @@ import { createMeasureTool, type MeasureTool } from './measure';
 
 const defaultUp = new THREE.Vector3(0, 0, 1);
 
+/** Map an up vector to the grid's ground-plane axis (the axis the grid is laid perpendicular to). */
+function upToGroundPlane(up: THREE.Vector3): 'x' | 'y' | 'z' {
+	const ax = Math.abs(up.x);
+	const ay = Math.abs(up.y);
+	const az = Math.abs(up.z);
+	if (az >= ax && az >= ay) return 'z';
+	if (ay >= ax && ay >= az) return 'y';
+	return 'x';
+}
+
 // Returns scale-specific values for mm, cm, and m scales
 const getScaleValue = (scale: string, mmVal: number, cmVal: number, mVal: number): number => {
 	switch (scale) {
@@ -55,8 +65,14 @@ export const initThree = function (
 } {
 	const config = applyDefaults(options || {});
 
+	const sceneUp = config.environment?.sceneUp || defaultUp;
+
 	const scene = createScene(config);
 	const camera = createCamera(config, canvas);
+	// Set the camera's up to the scene up BEFORE OrbitControls/the controller read it — OrbitControls
+	// captures the orbit basis from camera.up at construction, and the controller derives its presets
+	// and ortho camera from it. Without this, a Z-up scene would orbit and frame as if Y-up.
+	camera.up.copy(sceneUp);
 	const renderer = setupRenderer(canvas, config);
 	const controls = setupControls(camera, canvas, config);
 
@@ -66,7 +82,8 @@ export const initThree = function (
 		scene,
 		perspective: camera,
 		controls,
-		onActiveCameraChange: () => {}
+		onActiveCameraChange: () => {},
+		up: sceneUp
 	});
 	const getActiveCamera = () => cameraController.getActiveCamera();
 
@@ -91,7 +108,7 @@ export const initThree = function (
 	if (grid) scene.add(grid.object);
 
 	const gizmo = config.gizmo.enabled
-		? createViewGizmo({ camera, domElement: canvas, controls, controller: cameraController })
+		? createViewGizmo({ camera, domElement: canvas, controller: cameraController })
 		: null;
 
 	// HTML label overlay (CSS2D) and the measurement tool built on it. Both opt-in; the label layer
@@ -121,10 +138,25 @@ export const initThree = function (
 			? setupEventHandlers(canvas, scene, getActiveCamera, camera, controls, config)
 			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
 
+	// A drag to orbit/pan ends with a `click` on mouseup. Without guarding, that release click would
+	// be taken as a measurement point (placing a stray point or clearing a finished measurement when
+	// the user only meant to rotate). Record where the press started and treat the release as a click
+	// only if the pointer barely moved — a real click, not a drag.
+	const DRAG_SLOP_PX = 5;
+	let pressX = 0;
+	let pressY = 0;
+	const handlePointerDown = (event: MouseEvent) => {
+		pressX = event.clientX;
+		pressY = event.clientY;
+	};
+	const wasDrag = (event: MouseEvent) =>
+		Math.hypot(event.clientX - pressX, event.clientY - pressY) > DRAG_SLOP_PX;
+
 	// Capture-phase interceptors that pre-empt scene selection. Order: an active measurement claims
 	// the click first, then the gizmo. stopImmediatePropagation keeps the selection handler from
 	// also firing. (Both run in capture so they see the event before the bubble-phase selection.)
 	const handleToolClick = (event: MouseEvent) => {
+		if (wasDrag(event)) return; // an orbit/pan release, not a measurement click — leave it alone
 		if (measureTool?.handleClick(event)) {
 			event.stopImmediatePropagation();
 			return;
@@ -134,7 +166,14 @@ export const initThree = function (
 		}
 	};
 	if (gizmo || measureTool) {
+		canvas.addEventListener('mousedown', handlePointerDown, { capture: true });
 		canvas.addEventListener('click', handleToolClick, { capture: true });
+	}
+	// Forward movement to the measure tool so it can preview the snap point under the cursor. Passive:
+	// it only reads, never consumes, so it never interferes with orbit/pan.
+	const handleToolMove = (event: MouseEvent) => measureTool?.handleMove(event);
+	if (measureTool) {
+		canvas.addEventListener('mousemove', handleToolMove, { passive: true });
 	}
 
 	// Edge overlays: bind the configured options into a closure the consumer calls after loading
@@ -207,14 +246,17 @@ export const initThree = function (
 	);
 	animate();
 
-	const sceneUp = config.environment?.sceneUp || defaultUp;
 	scene.up.set(sceneUp.x, sceneUp.y, sceneUp.z);
 
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
 		if (gizmo || measureTool) {
+			canvas.removeEventListener('mousedown', handlePointerDown, { capture: true });
 			canvas.removeEventListener('click', handleToolClick, { capture: true });
+		}
+		if (measureTool) {
+			canvas.removeEventListener('mousemove', handleToolMove);
 		}
 		measureTool?.dispose();
 		labelLayer?.dispose();
@@ -322,11 +364,12 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 	return {
 		sceneScale: scale,
 		camera: {
+			// Default 3/4 iso for a Z-up scene: back-left and ABOVE (height on +Z).
 			position:
 				options.camera?.position ||
 				new THREE.Vector3(
 					-defaults.cameraDistance,
-					defaults.cameraDistance,
+					-defaults.cameraDistance,
 					defaults.cameraDistance
 				),
 			fov: options.camera?.fov || 20,
@@ -337,9 +380,10 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 		lighting: {
 			enableSunlight: options.lighting?.enableSunlight ?? true,
 			sunlightIntensity: options.lighting?.sunlightIntensity || 1,
+			// Sun overhead in a Z-up scene: height on +Z, offset across X/Y.
 			sunlightPosition:
 				options.lighting?.sunlightPosition ||
-				new THREE.Vector3(defaults.lightDistance, defaults.lightHeight, defaults.lightDistance),
+				new THREE.Vector3(defaults.lightDistance, defaults.lightDistance, defaults.lightHeight),
 			ambientLightColor: options.lighting?.ambientLightColor || new THREE.Color(0x404040),
 			ambientLightIntensity: options.lighting?.ambientLightIntensity || 1,
 			sunlightColor: options.lighting?.sunlightColor || 0xffffff // Default to white sunlight
@@ -388,7 +432,9 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			cellColor: options.grid?.cellColor ?? 0x888888,
 			majorColor: options.grid?.majorColor ?? 0x444444,
 			fadeDistance: options.grid?.fadeDistance ?? 100,
-			plane: options.grid?.plane ?? 'y'
+			// The "ground" plane is the one orthogonal to the scene up axis, so the grid lies under the
+			// model regardless of up convention (Z-up Rhino → 'z'; Y-up → 'y'). Explicit `plane` wins.
+			plane: options.grid?.plane ?? upToGroundPlane(options.environment?.sceneUp ?? defaultUp)
 		},
 		gizmo: {
 			enabled: options.gizmo?.enabled ?? false
@@ -660,8 +706,11 @@ function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>)
 	const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 	floor.userData.id = 'floor';
 	floor.name = 'floor';
-	floor.rotation.x = -Math.PI / 2;
-	floor.position.y = 0;
+	// PlaneGeometry lies in XY with a +Z normal — already the ground for a Z-up scene. Orient its
+	// normal to the scene up axis so the floor is the ground plane in any up convention.
+	const up = (config.environment?.sceneUp || defaultUp).clone().normalize();
+	floor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), up);
+	floor.position.set(0, 0, 0);
 
 	if (config.floor.receiveShadow && config.render.enableShadows) {
 		floor.receiveShadow = true;
@@ -813,12 +862,56 @@ function setupEventHandlers(
 
 	const clearSelection = () => {
 		selectedObjects.forEach((obj) => {
-			if (obj instanceof THREE.Mesh && originalMaterials.has(obj)) {
-				obj.material = originalMaterials.get(obj)!;
+			const restorable = obj as THREE.Object3D & {
+				material?: THREE.Material | THREE.Material[];
+			};
+			if (originalMaterials.has(obj)) {
+				const original = originalMaterials.get(obj)!;
+				// Dispose the clone we swapped in before restoring the original.
+				const clone = restorable.material;
+				if (clone instanceof THREE.Material) clone.dispose();
+				else if (Array.isArray(clone)) clone.forEach((m) => m.dispose());
+				restorable.material = original;
 				originalMaterials.delete(obj);
 			}
 		});
 		selectedObjects.clear();
+	};
+
+	// Highlight a selected object by cloning its material and recoloring. Meshes get an `emissive`
+	// tint (so the surface keeps its base color); lines and points have no emissive channel, so we
+	// recolor `color` directly. Returns true if a highlight was applied (a material was found).
+	const applyHighlight = (object: THREE.Object3D): boolean => {
+		const target = object as THREE.Object3D & { material?: THREE.Material | THREE.Material[] };
+		if (!(target.material instanceof THREE.Material)) return false;
+
+		originalMaterials.set(object, target.material);
+		const clone = target.material.clone();
+
+		if (object instanceof THREE.Mesh && 'emissive' in clone) {
+			(clone as THREE.MeshStandardMaterial).emissive = selectionColorObj.clone();
+		} else if ('color' in clone) {
+			(clone as THREE.LineBasicMaterial).color = selectionColorObj.clone();
+		}
+
+		target.material = clone;
+		return true;
+	};
+
+	// Picking lines and points needs a ray-to-geometry tolerance, scaled to the scene so it holds at
+	// any zoom. Plain THREE.Points use Raycaster.params.Points.threshold; fat Line2 uses its own
+	// material linewidth, so only Points needs this. (THREE.Line would use params.Line.threshold, but
+	// curves here are Line2.) Recomputed per pick from the current scene bounds.
+	const updatePickThresholds = () => {
+		const box = new THREE.Box3();
+		scene.traverse((object) => {
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (object.visible && !isViewerAid(object) && renderable.geometry) {
+				box.expandByObject(object);
+			}
+		});
+		const diagonal = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
+		raycaster.params.Points.threshold = diagonal * 0.01;
 	};
 
 	const handleMouseDown = (event: MouseEvent) => {
@@ -836,6 +929,7 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+		updatePickThresholds();
 		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)
@@ -848,17 +942,9 @@ function setupEventHandlers(
 				clearSelection();
 				selectedObjects.add(clickedObject);
 
-				// Clone material so we don't affect other meshes
-				if (
-					clickedObject instanceof THREE.Mesh &&
-					clickedObject.material instanceof THREE.Material
-				) {
-					originalMaterials.set(clickedObject, clickedObject.material);
-
-					const clonedMaterial = clickedObject.material.clone();
-					(clonedMaterial as any).emissive = selectionColorObj.clone();
-					clickedObject.material = clonedMaterial;
-				}
+				// Clone material (so siblings sharing it are untouched) and recolor to highlight.
+				// Handles meshes, fat lines, and points alike.
+				applyHighlight(clickedObject);
 
 				config.events?.onObjectSelected?.(clickedObject);
 
@@ -877,6 +963,7 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+		updatePickThresholds();
 		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)

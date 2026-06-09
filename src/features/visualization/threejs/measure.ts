@@ -25,6 +25,12 @@ export interface MeasureTool {
 	isEnabled(): boolean;
 	/** Process a click. Returns true if the tool consumed it (caller should not also select). */
 	handleClick(event: MouseEvent): boolean;
+	/**
+	 * Process pointer movement to preview the next snap point — a ghost marker tracks the cursor and
+	 * jumps to the vertex a click would snap to, so users can aim before committing. No-op when the
+	 * tool is disabled. The caller forwards mousemove; nothing is consumed.
+	 */
+	handleMove(event: MouseEvent): void;
 	/** Clear the current measurement (markers, line, label). */
 	clear(): void;
 	dispose(): void;
@@ -37,8 +43,12 @@ export interface MeasureOptions {
 	color?: THREE.ColorRepresentation;
 	/** CSS class applied to the distance label, for styling. */
 	labelClassName?: string;
-	/** Format the distance number → label text. Default: 3 significant digits + " m". */
-	format?: (distance: number) => string;
+	/**
+	 * Format the measurement → label text. Receives the straight-line `distance` and the per-axis
+	 * `delta` (|b − a| on each axis). May return multi-line text or HTML; the default renders the
+	 * total plus a Δx/Δy/Δz breakdown. Old `(distance) => string` callbacks remain valid.
+	 */
+	format?: (distance: number, delta: THREE.Vector3) => string;
 }
 
 interface MeasureDeps {
@@ -51,7 +61,9 @@ interface MeasureDeps {
 
 const DEFAULT_SNAP_PIXELS = 12;
 const DEFAULT_COLOR = 0xffcc00;
-const defaultFormat = (d: number) => `${d.toPrecision(3)} m`;
+const fmt = (n: number) => `${n.toPrecision(3)} m`;
+const defaultFormat = (d: number, delta: THREE.Vector3) =>
+	`${fmt(d)}\nΔx ${fmt(delta.x)}  Δy ${fmt(delta.y)}  Δz ${fmt(delta.z)}`;
 
 /**
  * Snap a raycast hit to the nearest vertex of the struck triangle if it's within `snapPixels` on
@@ -121,6 +133,36 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 		depthTest: false // markers stay visible through geometry, like CAD snap dots
 	});
 
+	// A hollow-feeling preview dot: dimmer + bigger than a committed marker so the snap target the
+	// next click will lock onto is obvious before clicking. Shown only while hovering geometry.
+	const hoverMaterial = new THREE.PointsMaterial({
+		color,
+		size: 11,
+		sizeAttenuation: false,
+		depthTest: false,
+		transparent: true,
+		opacity: 0.5
+	});
+	let hoverMarker: THREE.Points | null = null;
+
+	const showHover = (p: THREE.Vector3 | null) => {
+		if (!p) {
+			if (hoverMarker) hoverMarker.visible = false;
+			return;
+		}
+		if (!hoverMarker) {
+			const geometry = new THREE.BufferGeometry();
+			geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+			hoverMarker = new THREE.Points(geometry, hoverMaterial);
+			hoverMarker.renderOrder = 1000;
+			hoverMarker.userData.id = 'measure';
+			hoverMarker.raycast = () => {};
+			scene.add(hoverMarker);
+		}
+		hoverMarker.position.copy(p);
+		hoverMarker.visible = true;
+	};
+
 	const makeMarker = (p: THREE.Vector3): THREE.Points => {
 		const geometry = new THREE.BufferGeometry();
 		geometry.setAttribute('position', new THREE.Float32BufferAttribute([p.x, p.y, p.z], 3));
@@ -166,15 +208,16 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 		scene.add(line);
 
 		const mid = a.clone().add(b).multiplyScalar(0.5);
-		label = labelLayer.addLabel(format(a.distanceTo(b)), mid, options.labelClassName);
+		const delta = new THREE.Vector3(
+			Math.abs(b.x - a.x),
+			Math.abs(b.y - a.y),
+			Math.abs(b.z - a.z)
+		);
+		label = labelLayer.addLabel(format(a.distanceTo(b), delta), mid, options.labelClassName);
 	};
 
-	const handleClick = (event: MouseEvent): boolean => {
-		if (!enabled) return false;
-
-		// A third click after a completed measurement starts fresh.
-		if (points.length === 2) clear();
-
+	/** Raycast the cursor and return the snapped pick point, or null if it hit no measurable geometry. */
+	const pickPoint = (event: MouseEvent): THREE.Vector3 | null => {
 		const rect = canvas.getBoundingClientRect();
 		pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -185,14 +228,24 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 			.intersectObjects(scene.children, true)
 			.filter((i) => i.object.userData.id !== 'measure' && i.object.userData.id !== 'grid');
 
-		if (hits.length === 0) return true; // consumed: a measuring click that missed still isn't a select
+		if (hits.length === 0) return null;
+		return snapToVertex(hits[0], camera, { width: rect.width, height: rect.height }, snapPixels);
+	};
 
-		const point = snapToVertex(
-			hits[0],
-			camera,
-			{ width: rect.width, height: rect.height },
-			snapPixels
-		);
+	const handleMove = (event: MouseEvent): void => {
+		if (!enabled) return;
+		showHover(pickPoint(event));
+	};
+
+	const handleClick = (event: MouseEvent): boolean => {
+		if (!enabled) return false;
+
+		// A third click after a completed measurement starts fresh.
+		if (points.length === 2) clear();
+
+		const point = pickPoint(event);
+		if (point === null) return true; // consumed: a measuring click that missed still isn't a select
+
 		points.push(point);
 		markers.push(makeMarker(point));
 
@@ -203,14 +256,24 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 	return {
 		setEnabled: (value) => {
 			enabled = value;
-			if (!value) clear();
+			if (!value) {
+				clear();
+				showHover(null);
+			}
 		},
 		isEnabled: () => enabled,
 		handleClick,
+		handleMove,
 		clear,
 		dispose: () => {
 			clear();
+			if (hoverMarker) {
+				hoverMarker.geometry.dispose();
+				hoverMarker.removeFromParent();
+				hoverMarker = null;
+			}
 			markerMaterial.dispose();
+			hoverMaterial.dispose();
 		}
 	};
 }
