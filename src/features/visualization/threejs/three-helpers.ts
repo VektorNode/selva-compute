@@ -164,8 +164,16 @@ export function computeCombinedBoundingBox(meshes: THREE.Object3D[]): THREE.Box3
 }
 
 /**
- * Clears the given THREE.Scene by removing all non-floor top-level children and
- * recursively disposing of their geometry and materials.
+ * `userData.id`s of scene infrastructure that is created once at init and must survive content
+ * updates: the floor, the grid, and the CSS2D label layer's group. Content (meshes/lines/points)
+ * carries no such id and is cleared on every solve.
+ */
+const PERSISTENT_SCENE_IDS = new Set(['floor', 'grid', 'label-layer']);
+
+/**
+ * Clears the given THREE.Scene by removing all top-level content children (everything except
+ * persistent infrastructure, see {@link PERSISTENT_SCENE_IDS}) and recursively disposing of their
+ * geometry and materials.
  *
  * Removes at the top level rather than traversing for meshes, so parent Groups
  * don't accumulate as ghost nodes after their mesh children are disposed.
@@ -175,7 +183,11 @@ function clearScene(scene: THREE.Scene): void {
 	const topLevel = [...scene.children];
 
 	topLevel.forEach((object) => {
-		if (object.userData.id === 'floor') return;
+		// Persistent scene infrastructure (floor, grid, the CSS2D label layer) outlives content
+		// updates — it's added once at init, not per solve. Removing the label-layer group here
+		// orphans it, so labels created afterwards never render (the CSS2D renderer walks the live
+		// scene and never finds them).
+		if (PERSISTENT_SCENE_IDS.has(object.userData.id)) return;
 
 		// Recursively dispose all renderable objects (meshes, lines, points) in this subtree.
 		object.traverse((child) => {
