@@ -301,7 +301,9 @@ function subdivide(
 /** Tolerance in world units: a fraction of the curve's bounding-box diagonal, with a tiny floor. */
 function chordTolerance(curve: InstanceType<RhinoModule['Curve']>): number {
 	// rhino3dm WASM's getBoundingBox takes no args at runtime despite the .d.ts signature.
-	const box = (curve as unknown as { getBoundingBox(): InstanceType<RhinoModule['BoundingBox']> }).getBoundingBox();
+	const box = (
+		curve as unknown as { getBoundingBox(): InstanceType<RhinoModule['BoundingBox']> }
+	).getBoundingBox();
 	const min = box.min;
 	const max = box.max;
 	const diagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
