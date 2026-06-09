@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 2.1.0-beta.1
+
+### Minor Changes
+
+- 5b8c969: Expand the viewer with CAD-style tooling: camera controller (2D/3D toggle, preset views, rotate lock), infinite fading reference grid, mesh edge overlays, label layer, and a two-click measurement tool.
+
 ## 2.1.0-beta.0
 
 ### Minor Changes
