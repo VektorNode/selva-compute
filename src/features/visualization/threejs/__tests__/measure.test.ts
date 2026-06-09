@@ -34,7 +34,12 @@ describe('snapToVertex', () => {
 		// PlaneGeometry triangle indices: one triangle is (0,2,1) → corners include (-1,1) and (1,1).
 		const face = { a: 0, b: 2, c: 1, normal: new THREE.Vector3(0, 0, 1), materialIndex: 0 };
 		// Hit just inside the top-right corner (1,1,0).
-		const result = snapToVertex(hitAt(mesh, new THREE.Vector3(0.97, 0.97, 0), face), camera, SCREEN, 12);
+		const result = snapToVertex(
+			hitAt(mesh, new THREE.Vector3(0.97, 0.97, 0), face),
+			camera,
+			SCREEN,
+			12
+		);
 
 		// Snaps to an actual corner, not the raw point.
 		expect(result.x).toBeCloseTo(1, 5);
@@ -71,7 +76,12 @@ describe('snapToVertex', () => {
 		camera.updateMatrixWorld(true);
 
 		const face = { a: 0, b: 2, c: 1, normal: new THREE.Vector3(0, 0, 1), materialIndex: 0 };
-		const result = snapToVertex(hitAt(mesh, new THREE.Vector3(10.97, 0.97, 0), face), camera, SCREEN, 12);
+		const result = snapToVertex(
+			hitAt(mesh, new THREE.Vector3(10.97, 0.97, 0), face),
+			camera,
+			SCREEN,
+			12
+		);
 
 		expect(result.x).toBeCloseTo(11, 5);
 		expect(result.y).toBeCloseTo(1, 5);

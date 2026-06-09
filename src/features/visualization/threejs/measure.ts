@@ -187,7 +187,12 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 
 		if (hits.length === 0) return true; // consumed: a measuring click that missed still isn't a select
 
-		const point = snapToVertex(hits[0], camera, { width: rect.width, height: rect.height }, snapPixels);
+		const point = snapToVertex(
+			hits[0],
+			camera,
+			{ width: rect.width, height: rect.height },
+			snapPixels
+		);
 		points.push(point);
 		markers.push(makeMarker(point));
 
