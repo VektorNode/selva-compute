@@ -5,6 +5,7 @@
     "@selvajs/compute": "2.0.0"
   },
   "changesets": [
+    "measure-label-z-index",
     "measure-lines-and-points",
     "measure-tool-readability",
     "unify-coordinate-frame-zup",
