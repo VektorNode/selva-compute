@@ -1,5 +1,19 @@
 # @selvajs/compute
 
+## 2.1.0-beta.2
+
+### Minor Changes
+
+- 38cf55d: Add optional `metadata` (`Record<string, string>`) to `FileData`, carrying arbitrary key/value pairs attached in Grasshopper through to downstream consumers for tagging and indexing. Optional and backwards-compatible — existing payloads and the `isFileData` guard are unaffected.
+
+### Patch Changes
+
+- 38cf55d: Make `GrasshopperClient.create()` resilient to a cold or briefly-busy-but-up Compute server.
+
+  The pre-flight `/healthcheck` probe was a single-sample boolean gate with no retry and no timeout, so one missed probe (warm-up, a transient network blip, momentary non-200) made construction throw `NETWORK_ERROR` even though the server was online.
+  - `create()` now retries the healthcheck with exponential backoff (default 3 probes, 250ms→1s) before failing, configurable via the existing `config.retry` policy, and disposes the client on final failure.
+  - `isServerOnline(timeoutMs = 5000)` now bounds the probe with `AbortSignal.timeout` so a hung connection can't stall the caller; pass `0` to disable. The probe in `create()` always uses its own timeout, independent of `config.timeoutMs` (which may be `0` for long solves).
+
 ## 2.1.0-beta.1
 
 ### Minor Changes

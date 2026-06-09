@@ -6,6 +6,8 @@
   },
   "changesets": [
     "beta-viewer-tools",
-    "display-batch-beta"
+    "display-batch-beta",
+    "file-data-metadata",
+    "grasshopper-client-create-retry"
   ]
 }
