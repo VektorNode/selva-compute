@@ -24,18 +24,6 @@ function upToGroundPlane(up: THREE.Vector3): 'x' | 'y' | 'z' {
 	return 'x';
 }
 
-// Returns scale-specific values for mm, cm, and m scales
-const getScaleValue = (scale: string, mmVal: number, cmVal: number, mVal: number): number => {
-	switch (scale) {
-		case 'mm':
-			return mmVal;
-		case 'cm':
-			return cmVal;
-		default:
-			return mVal;
-	}
-};
-
 /**
  * Initializes a Three.js environment with scene, camera, renderer, and event handling.
  */
@@ -59,6 +47,11 @@ export const initThree = function (
 	applyEdges: (root: THREE.Object3D) => void;
 	/** Toggle ambient occlusion at runtime — builds or tears down the postprocessing pipeline. */
 	setAmbientOcclusion: (enabled: boolean) => void;
+	/**
+	 * Refit the sun's shadow frustum to the current scene content for crisp shadows. Call after
+	 * loading or replacing geometry (e.g. after `updateScene`). No-op when sunlight/shadows are off.
+	 */
+	updateShadowBounds: () => void;
 	dispose: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
@@ -88,7 +81,19 @@ export const initThree = function (
 	const getActiveCamera = () => cameraController.getActiveCamera();
 
 	setupEnvironment(scene, config);
-	setupLighting(scene, config);
+	// The shadow-casting sun (null when sunlight or shadows are off). Its shadow frustum is fitted to
+	// the scene content below and again whenever the host calls updateShadowBounds after a geometry
+	// change — keeping shadow-map texels packed onto the model for crisp shadows at any scale.
+	const sunlight = setupLighting(scene, config);
+
+	/**
+	 * Refit the sun's shadow frustum to the current scene content. Call after loading or replacing
+	 * geometry (e.g. right after `updateScene`). No-op when there is no shadow-casting sun or no
+	 * content. Cheap: one bounds traversal, no per-frame cost.
+	 */
+	const updateShadowBounds = () => {
+		if (sunlight) fitShadowToContent(sunlight, computeContentBounds(scene));
+	};
 
 	if (config.floor?.enabled) {
 		addFloor(scene, config);
@@ -248,6 +253,10 @@ export const initThree = function (
 
 	scene.up.set(sceneUp.x, sceneUp.y, sceneUp.z);
 
+	// Initial fit so any geometry already present at construction casts crisp shadows. Hosts that add
+	// geometry later (via updateScene) should call updateShadowBounds again afterwards.
+	updateShadowBounds();
+
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
@@ -291,6 +300,7 @@ export const initThree = function (
 		measureTool,
 		applyEdges,
 		setAmbientOcclusion,
+		updateShadowBounds,
 		dispose,
 		fitToView: eventHandlers.fitToView,
 		clearSelection: eventHandlers.clearSelection
@@ -487,6 +497,59 @@ function isViewerAid(object: THREE.Object3D): boolean {
 	return false;
 }
 
+/**
+ * Axis-aligned bounds of the scene's renderable *content* — every visible mesh/line/points, with
+ * viewer aids excluded. The grid (a huge camera-tracking plane) and the floor would otherwise
+ * dominate the box. Shared by fit-to-view, pick-threshold scaling, and shadow-frustum fitting so
+ * they all measure the same thing. Returns an empty Box3 when there is no content.
+ */
+function computeContentBounds(scene: THREE.Scene): THREE.Box3 {
+	const box = new THREE.Box3();
+	scene.traverse((object) => {
+		const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+		if (object.visible && !isViewerAid(object) && renderable.geometry) {
+			box.expandByObject(object);
+		}
+	});
+	return box;
+}
+
+/**
+ * Fit a directional light's shadow camera to the scene content. The orthographic shadow frustum is
+ * sized to the content's bounding sphere (padded), so the fixed shadow-map texels cover only the
+ * model rather than a generous constant area — the dominant lever on shadow crispness. Near/far are
+ * derived from how far the light sits from the content centre, keeping depth precision tight.
+ *
+ * No-op when there is no content (an empty box would collapse the frustum to a point).
+ */
+function fitShadowToContent(light: THREE.DirectionalLight, bounds: THREE.Box3): void {
+	if (bounds.isEmpty()) return;
+
+	const center = bounds.getCenter(new THREE.Vector3());
+	// Bounding-sphere radius makes the frustum rotation-invariant: the light can shine from any
+	// angle and the model still fits, with no per-angle recompute. Pad so grazing-angle casters and
+	// soft-shadow (VSM) blur near the edges don't clip.
+	const radius = bounds.getSize(new THREE.Vector3()).length() * 0.5 * 1.2;
+
+	const cam = light.shadow.camera;
+	cam.left = -radius;
+	cam.right = radius;
+	cam.top = radius;
+	cam.bottom = -radius;
+
+	// Aim the shadow camera at the content centre. The light keeps its configured *position*; only
+	// its target moves, so the lighting direction is preserved while the shadow frustum recentres.
+	light.target.position.copy(center);
+	light.target.updateMatrixWorld();
+
+	// Near/far bracket the content along the light→centre axis. Clamp near to a small positive value
+	// so a light sitting inside the bounds can't push near ≤ 0.
+	const lightDistance = light.position.distanceTo(center);
+	cam.near = Math.max(radius * 0.01, lightDistance - radius);
+	cam.far = lightDistance + radius;
+	cam.updateProjectionMatrix();
+}
+
 function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
 	const scene = new THREE.Scene();
 
@@ -644,47 +707,55 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 	}
 }
 
-function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
+/**
+ * Set up scene lighting. Returns the shadow-casting sun, if any, so the caller can refit its shadow
+ * frustum to the scene whenever geometry changes (see `fitShadowToContent`). Returns null when
+ * sunlight is disabled or shadows are off — there is then nothing to refit.
+ */
+function setupLighting(
+	scene: THREE.Scene,
+	config: Required<ThreeInitializerOptions>
+): THREE.DirectionalLight | null {
 	const ambientLight = new THREE.AmbientLight(
 		config.lighting.ambientLightColor,
 		config.lighting.ambientLightIntensity
 	);
 	scene.add(ambientLight);
 
-	if (config.lighting.enableSunlight) {
-		const sunlight = new THREE.DirectionalLight(
-			config.lighting.sunlightColor ?? 0xffffff,
-			config.lighting.sunlightIntensity
-		);
-		const pos = config.lighting.sunlightPosition;
-		if (pos) {
-			sunlight.position.set(pos.x, pos.y, pos.z);
-		}
+	if (!config.lighting.enableSunlight) return null;
 
-		if (config.render.enableShadows) {
-			sunlight.castShadow = true;
-			const shadowSize = getScaleValue(config.sceneScale, 0.1, 10, 100);
-
-			sunlight.shadow.camera.left = -shadowSize;
-			sunlight.shadow.camera.right = shadowSize;
-			sunlight.shadow.camera.top = shadowSize;
-			sunlight.shadow.camera.bottom = -shadowSize;
-
-			const shadowNear = getScaleValue(config.sceneScale, 0.001, 0.1, 0.5);
-			const shadowFar = getScaleValue(config.sceneScale, 1, 100, 500);
-
-			sunlight.shadow.camera.near = shadowNear;
-			sunlight.shadow.camera.far = shadowFar;
-
-			sunlight.shadow.mapSize.width = config.render.shadowMapSize || 2048;
-			sunlight.shadow.mapSize.height = config.render.shadowMapSize || 2048;
-
-			sunlight.shadow.bias = -0.0001;
-			sunlight.shadow.normalBias = 0.02;
-		}
-
-		scene.add(sunlight);
+	const sunlight = new THREE.DirectionalLight(
+		config.lighting.sunlightColor ?? 0xffffff,
+		config.lighting.sunlightIntensity
+	);
+	const pos = config.lighting.sunlightPosition;
+	if (pos) {
+		sunlight.position.set(pos.x, pos.y, pos.z);
 	}
+
+	if (!config.render.enableShadows) {
+		scene.add(sunlight);
+		return null;
+	}
+
+	sunlight.castShadow = true;
+
+	// The frustum bounds (left/right/top/bottom/near/far) are not set here — they are fitted to the
+	// scene content by fitShadowToContent, called at init and on every geometry change. Sizing them
+	// to the model instead of a fixed constant is the dominant lever on shadow crispness.
+	sunlight.shadow.mapSize.width = config.render.shadowMapSize || 2048;
+	sunlight.shadow.mapSize.height = config.render.shadowMapSize || 2048;
+
+	sunlight.shadow.bias = -0.0001;
+	sunlight.shadow.normalBias = 0.02;
+	// Soften VSM edges; cheap and only meaningful once the frustum is tight (see fitShadowToContent).
+	sunlight.shadow.radius = 4;
+
+	scene.add(sunlight);
+	// A DirectionalLight aims at its target's world position; the target must be in the scene graph
+	// for its matrix to update. fitShadowToContent moves this target to the content centre.
+	scene.add(sunlight.target);
+	return sunlight;
 }
 
 function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
@@ -814,18 +885,9 @@ function setupEventHandlers(
 	};
 
 	const fitToView = () => {
-		const box = new THREE.Box3();
-
-		scene.traverse((object) => {
-			// Frame any renderable (mesh, line, points) — not just meshes — so curve/point-only
-			// batches are fit to view too. Viewer aids are excluded: the grid (a huge plane that
-			// tracks the camera) would otherwise dominate the bounds and blow up the fit distance;
-			// the floor, label-layer, and measure markers aren't content either.
-			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
-			if (object.visible && !isViewerAid(object) && renderable.geometry) {
-				box.expandByObject(object);
-			}
-		});
+		// Frame the scene's renderable content; viewer aids (grid/floor/labels/measure) are excluded so
+		// the camera-tracking grid plane can't dominate the bounds and blow up the fit distance.
+		const box = computeContentBounds(scene);
 
 		if (box.isEmpty()) {
 			getLogger().warn('No objects to fit to view');
@@ -903,13 +965,7 @@ function setupEventHandlers(
 	// material linewidth, so only Points needs this. (THREE.Line would use params.Line.threshold, but
 	// curves here are Line2.) Recomputed per pick from the current scene bounds.
 	const updatePickThresholds = () => {
-		const box = new THREE.Box3();
-		scene.traverse((object) => {
-			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
-			if (object.visible && !isViewerAid(object) && renderable.geometry) {
-				box.expandByObject(object);
-			}
-		});
+		const box = computeContentBounds(scene);
 		const diagonal = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
 		raycaster.params.Points.threshold = diagonal * 0.01;
 	};

@@ -102,6 +102,8 @@ export function createPlayground(options: PlaygroundOptions): Playground {
 			viewer.scene.add(obj);
 			tracked.add(obj);
 		}
+		// Refit the shadow frustum so newly-added geometry casts crisp shadows.
+		viewer.updateShadowBounds();
 	};
 
 	const clearObjects = () => {
@@ -110,6 +112,7 @@ export function createPlayground(options: PlaygroundOptions): Playground {
 			obj.removeFromParent();
 		}
 		tracked.clear();
+		viewer.updateShadowBounds();
 	};
 
 	const addSection = (sectionTitle: string) => {

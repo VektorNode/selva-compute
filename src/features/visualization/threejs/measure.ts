@@ -61,16 +61,43 @@ interface MeasureDeps {
 
 const DEFAULT_SNAP_PIXELS = 12;
 const DEFAULT_COLOR = 0xffcc00;
+// Line/Points raycast threshold as a fraction of the view distance (camera→target). ~1.5% gives a
+// comfortable few-pixel grab band at typical framing without snapping to far-off geometry.
+const LINE_PICK_FRACTION = 0.015;
 const fmt = (n: number) => `${n.toPrecision(3)} m`;
 const defaultFormat = (d: number, delta: THREE.Vector3) =>
 	`${fmt(d)}\nΔx ${fmt(delta.x)}  Δy ${fmt(delta.y)}  Δz ${fmt(delta.z)}`;
 
 /**
- * Snap a raycast hit to the nearest vertex of the struck triangle if it's within `snapPixels` on
- * screen; otherwise return the raw hit point. Pure (no DOM) so it's unit-testable: it takes the
- * screen size explicitly rather than reading the canvas. Exported for that reason.
+ * The vertex indices to consider snapping to for a given hit, by object type:
+ * - Mesh: the three vertices of the struck triangle (`hit.face`).
+ * - Line / LineSegments: the two endpoints of the struck segment (`hit.index`, `hit.index + 1`).
+ * - Points: the struck vertex (`hit.index`).
+ * Returns null when the hit carries no usable index info (e.g. a fat `Line2`), so the caller keeps
+ * the raw hit point.
+ */
+function snapCandidateIndices(hit: THREE.Intersection): number[] | null {
+	const obj = hit.object;
+	if (obj instanceof THREE.Mesh) {
+		return hit.face ? [hit.face.a, hit.face.b, hit.face.c] : null;
+	}
+	if (obj instanceof THREE.Points) {
+		return hit.index != null ? [hit.index] : null;
+	}
+	// THREE.Line / LineSegments / LineLoop. `hit.index` is the first vertex of the struck segment.
+	if (obj instanceof THREE.Line) {
+		return hit.index != null ? [hit.index, hit.index + 1] : null;
+	}
+	return null;
+}
+
+/**
+ * Snap a raycast hit to the nearest geometry vertex within `snapPixels` on screen; otherwise return
+ * the raw hit point. Works for meshes (triangle vertices), lines (segment endpoints), and points
+ * (the vertex itself). Pure (no DOM) so it's unit-testable: it takes the screen size explicitly
+ * rather than reading the canvas. Exported for that reason.
  *
- * Falls back to the raw point for non-mesh hits (e.g. a curve) or geometry without a face/positions.
+ * Falls back to the raw point for hits without usable vertex indices or positions.
  */
 export function snapToVertex(
 	hit: THREE.Intersection,
@@ -79,10 +106,11 @@ export function snapToVertex(
 	snapPixels: number
 ): THREE.Vector3 {
 	const raw = hit.point.clone();
-	const mesh = hit.object as THREE.Mesh;
-	if (!(mesh instanceof THREE.Mesh) || hit.face == null || !mesh.geometry) return raw;
+	const obj = hit.object as THREE.Object3D & { geometry?: THREE.BufferGeometry };
+	const indices = snapCandidateIndices(hit);
+	if (!indices || !obj.geometry) return raw;
 
-	const pos = mesh.geometry.attributes.position as THREE.BufferAttribute | undefined;
+	const pos = obj.geometry.attributes.position as THREE.BufferAttribute | undefined;
 	if (!pos) return raw;
 
 	const toScreen = (worldP: THREE.Vector3): THREE.Vector2 => {
@@ -96,9 +124,10 @@ export function snapToVertex(
 
 	let best = raw;
 	let bestPx = snapPixels;
-	for (const idx of [hit.face.a, hit.face.b, hit.face.c]) {
+	for (const idx of indices) {
+		if (idx >= pos.count) continue; // guard the line `index + 1` against the geometry end
 		const local = new THREE.Vector3().fromBufferAttribute(pos, idx);
-		const world = local.applyMatrix4(mesh.matrixWorld);
+		const world = local.applyMatrix4(obj.matrixWorld);
 		const px = toScreen(world).distanceTo(rawScreen);
 		if (px < bestPx) {
 			bestPx = px;
@@ -224,6 +253,15 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 
 		const camera = getActiveCamera();
 		raycaster.setFromCamera(pointer, camera);
+
+		// Lines and points have no surface area, so they're only "hit" when the ray passes within a
+		// world-space threshold of them — left at the default ~1 unit they're nearly impossible to
+		// click. Scale the threshold with the view size (camera distance to the orbit target, here the
+		// origin) so the pick tolerance stays roughly constant on screen as the user zooms.
+		const viewScale = camera.position.length();
+		raycaster.params.Line = { threshold: viewScale * LINE_PICK_FRACTION };
+		raycaster.params.Points = { threshold: viewScale * LINE_PICK_FRACTION };
+
 		const hits = raycaster
 			.intersectObjects(scene.children, true)
 			.filter((i) => i.object.userData.id !== 'measure' && i.object.userData.id !== 'grid');

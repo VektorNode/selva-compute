@@ -67,9 +67,51 @@ function addMesh(geo: THREE.BufferGeometry, name: string, hue: number) {
 	if (edgesOn) viewer.applyEdges(mesh); // keep new meshes consistent with the current edge toggle
 }
 
+/** A small cloud of points scattered above the floor — measurement targets that snap to each vertex. */
+function addPoints(name: string, hue: number) {
+	const verts: number[] = [];
+	for (let i = 0; i < 24; i++) {
+		verts.push((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.5 + Math.random() * 3);
+	}
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+	const points = new THREE.Points(
+		geo,
+		new THREE.PointsMaterial({
+			color: new THREE.Color().setHSL(hue, 0.7, 0.6),
+			size: 8,
+			sizeAttenuation: false
+		})
+	);
+	points.name = name;
+	pg.addObjects([points]);
+}
+
+/** A sampled 3D curve drawn as a polyline — measure between its segment endpoints. */
+function addCurve(name: string, hue: number) {
+	const curve = new THREE.CatmullRomCurve3([
+		new THREE.Vector3(-4, -2, 0.5),
+		new THREE.Vector3(-1, 2, 2.5),
+		new THREE.Vector3(2, -1, 1.5),
+		new THREE.Vector3(4, 3, 3)
+	]);
+	const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(60));
+	const line = new THREE.Line(
+		geo,
+		new THREE.LineBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.7, 0.5) })
+	);
+	line.name = name;
+	pg.addObjects([line]);
+}
+
+let pointsCount = 0;
+let curveCount = 0;
+
 function randomScene() {
 	pg.clearObjects();
 	meshCount = 0;
+	pointsCount = 0;
+	curveCount = 0;
 	// Three's cylinder/cone/torus are built Y-up; rotate them into the Z-up scene so they stand on
 	// the grid instead of lying on their sides.
 	const geos: Array<() => THREE.BufferGeometry> = [
@@ -82,6 +124,9 @@ function randomScene() {
 	for (let i = 0; i < 12; i++) {
 		addMesh(geos[Math.floor(Math.random() * geos.length)](), `Mesh_${meshCount}`, i / 12);
 	}
+	// A point cloud and a curve too, so the measure tool has line/point targets to snap to.
+	addPoints(`Points_${pointsCount++}`, 0.6);
+	addCurve(`Curve_${curveCount++}`, 0.95);
 	requestAnimationFrame(() => viewer.fitToView());
 	pg.setStatus(defaultHint);
 }
@@ -99,6 +144,8 @@ pg.addButton('Add Torus', () =>
 		Math.random()
 	)
 );
+pg.addButton('Add Points', () => addPoints(`Points_${pointsCount++}`, Math.random()));
+pg.addButton('Add Curve', () => addCurve(`Curve_${curveCount++}`, Math.random()));
 pg.addButton('Random Scene', randomScene);
 pg.addButton('Clear', () => {
 	pg.clearObjects();

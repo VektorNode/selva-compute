@@ -66,6 +66,50 @@ describe('snapToVertex', () => {
 		expect(snapToVertex(hit, frontCamera(), SCREEN, 12)).toEqual(raw);
 	});
 
+	it('snaps to the nearer endpoint of a struck line segment', () => {
+		// A line from (-1,0,0) to (1,0,0); segment 0 spans indices 0→1.
+		const geometry = new THREE.BufferGeometry().setFromPoints([
+			new THREE.Vector3(-1, 0, 0),
+			new THREE.Vector3(1, 0, 0)
+		]);
+		const line = new THREE.Line(geometry, new THREE.LineBasicMaterial());
+		line.updateMatrixWorld(true);
+		const camera = frontCamera();
+
+		// Hit near the right endpoint (1,0,0); index is the first vertex of the struck segment.
+		const hit = {
+			distance: 0,
+			point: new THREE.Vector3(0.95, 0, 0),
+			object: line,
+			index: 0
+		} as THREE.Intersection;
+
+		const result = snapToVertex(hit, camera, SCREEN, 12);
+		expect(result.x).toBeCloseTo(1, 5);
+		expect(result.y).toBeCloseTo(0, 5);
+	});
+
+	it('snaps to the struck vertex of a Points object', () => {
+		const geometry = new THREE.BufferGeometry().setFromPoints([
+			new THREE.Vector3(0, 0, 0),
+			new THREE.Vector3(0.5, 0.5, 0)
+		]);
+		const pointsObj = new THREE.Points(geometry, new THREE.PointsMaterial());
+		pointsObj.updateMatrixWorld(true);
+
+		// A Points hit lands slightly off the exact vertex; snapping should pull it onto index 1.
+		const hit = {
+			distance: 0,
+			point: new THREE.Vector3(0.51, 0.49, 0),
+			object: pointsObj,
+			index: 1
+		} as THREE.Intersection;
+
+		const result = snapToVertex(hit, frontCamera(), SCREEN, 12);
+		expect(result.x).toBeCloseTo(0.5, 5);
+		expect(result.y).toBeCloseTo(0.5, 5);
+	});
+
 	it('respects the mesh world transform when snapping', () => {
 		const mesh = quad();
 		mesh.position.set(10, 0, 0); // shift the quad; corner now at (11, 1, 0)
