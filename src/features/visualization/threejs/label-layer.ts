@@ -50,6 +50,10 @@ export function createLabelLayer(container: HTMLElement, scene: THREE.Scene): La
 	dom.style.height = '100%';
 	dom.style.overflow = 'hidden';
 	dom.style.pointerEvents = 'none';
+	// Stack above the canvas and any host overlays (e.g. blur/loading scrims) that share the
+	// container's positioning context — without an explicit z-index the overlay sits at z-auto and
+	// such scrims paint over the labels. Kept below typical menu/popover layers.
+	dom.style.zIndex = '30';
 	// The container is the canvas's positioning context; make sure it actually establishes one.
 	if (getComputedStyle(container).position === 'static') {
 		container.style.position = 'relative';
