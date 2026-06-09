@@ -5,9 +5,6 @@
     "@selvajs/compute": "2.0.0"
   },
   "changesets": [
-    "beta-viewer-tools",
-    "display-batch-beta",
-    "file-data-metadata",
-    "grasshopper-client-create-retry"
+    "viewer-tools-public-exports"
   ]
 }
