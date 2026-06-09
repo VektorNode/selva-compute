@@ -63,20 +63,42 @@ export default class GrasshopperClient {
 	/**
 	 * Creates and initializes a GrasshopperClient with server validation.
 	 *
-	 * @throws {RhinoComputeError} with code NETWORK_ERROR if server is offline
+	 * The pre-flight `/healthcheck` probe is a single-sample boolean gate that
+	 * reads a cold or briefly-busy-but-up server as offline. To avoid failing
+	 * construction on that transient class, the probe is retried with a short
+	 * exponential backoff before giving up. Each probe is also bounded by a
+	 * timeout so a hung connection can't stall construction.
+	 *
+	 * @throws {RhinoComputeError} with code NETWORK_ERROR if the server stays
+	 *   unreachable across all attempts
 	 * @throws {RhinoComputeError} with code INVALID_CONFIG if configuration is invalid
 	 */
 	static async create(config: GrasshopperComputeConfig): Promise<GrasshopperClient> {
 		const client = new GrasshopperClient(config);
 
-		// Check server is online before returning
-		if (!(await client.serverStats.isServerOnline())) {
-			throw new RhinoComputeError('Rhino Compute server is not online', ErrorCodes.NETWORK_ERROR, {
-				context: { serverUrl: client.config.serverUrl }
-			});
+		// A single healthcheck miss isn't authoritative — a cold/busy-but-up
+		// server flickers non-200. Retry a few times with backoff before failing.
+		const attempts = Math.max(1, (config.retry?.attempts ?? 2) + 1);
+		const baseDelayMs = config.retry?.baseDelayMs ?? 250;
+		const maxDelayMs = config.retry?.maxDelayMs ?? 1000;
+
+		// The healthcheck is a trivial GET — always bound it, independent of the
+		// solve timeout (which may be 0 to allow arbitrarily long solves).
+		for (let attempt = 0; attempt < attempts; attempt++) {
+			if (await client.serverStats.isServerOnline()) {
+				return client;
+			}
+
+			if (attempt < attempts - 1) {
+				const delay = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
+				await new Promise((resolve) => setTimeout(resolve, delay));
+			}
 		}
 
-		return client;
+		await client.dispose();
+		throw new RhinoComputeError('Rhino Compute server is not online', ErrorCodes.NETWORK_ERROR, {
+			context: { serverUrl: client.config.serverUrl, attempts }
+		});
 	}
 
 	/**

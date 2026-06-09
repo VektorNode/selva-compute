@@ -19,6 +19,8 @@ export type FileData = {
 	isBase64Encoded: boolean;
 	/** Directory path for organizing the file in archive structures (e.g., ZIP). Typically empty string for root-level files, or a path like "subfolder/nested" */
 	subFolder: string;
+	/** Arbitrary user-supplied metadata (e.g. tags, indexing keys) attached in Grasshopper. Not interpreted by compute; passed through for downstream consumers. May be absent on older payloads. */
+	metadata?: Record<string, string>;
 };
 
 /**
