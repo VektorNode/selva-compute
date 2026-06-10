@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRhinoCompute } from '@/core/compute-fetch/compute-fetch';
+import { setLogger } from '@/core/utils/logger';
 import { createMockResponse } from '@tests/helpers/mock-fetch';
 
 const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
@@ -51,6 +52,28 @@ describe('fetchRhinoCompute — request shape', () => {
 
 		const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
 		expect(headers.Authorization).toBe('Bearer xyz');
+	});
+
+	it('does not warn about missing credentials when an auth token is configured', async () => {
+		// Regression: the warning only checked apiKey, so authToken-authenticated
+		// requests to remote servers logged a spurious "no API key" warning.
+		const warn = vi.fn();
+		setLogger({ debug: () => {}, info: () => {}, warn, error: () => {} });
+		try {
+			fetchMock.mockResolvedValueOnce(createMockResponse({ ok: true }));
+			await fetchRhinoCompute(
+				'io',
+				{},
+				{ serverUrl: 'https://compute.example.com', authToken: 'Bearer xyz' }
+			);
+			expect(warn).not.toHaveBeenCalled();
+
+			fetchMock.mockResolvedValueOnce(createMockResponse({ ok: true }));
+			await fetchRhinoCompute('io', {}, { serverUrl: 'https://compute.example.com' });
+			expect(warn).toHaveBeenCalledTimes(1);
+		} finally {
+			setLogger(null);
+		}
 	});
 
 	it('returns the parsed JSON response', async () => {

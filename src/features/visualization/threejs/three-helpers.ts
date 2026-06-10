@@ -31,7 +31,7 @@ const CAMERA_CONFIG = {
  */
 export function updateScene(
 	scene: THREE.Scene,
-	meshes: THREE.Mesh[],
+	meshes: THREE.Object3D[],
 	camera: THREE.PerspectiveCamera,
 	controls: OrbitControls,
 	initialPositionSet: boolean
@@ -40,7 +40,7 @@ export function updateScene(
 
 	if (meshes.length === 0) return;
 
-	// Add new meshes to scene
+	// Add new objects (meshes, lines, points) to scene
 	meshes.forEach((mesh) => {
 		scene.add(mesh);
 	});
@@ -141,17 +141,25 @@ export function parseColor(colorString: string): THREE.Color {
 	}
 }
 
-export function applyOffset(meshes: THREE.Mesh[], offsetY: number): void {
+/**
+ * Shift objects along one world axis. Defaults to `z` — the up axis of the unified Z-up scene
+ * frame (see `../coordinate-transform.ts`), so grounding subtracts the content's lowest z.
+ */
+export function applyOffset(
+	meshes: THREE.Object3D[],
+	offset: number,
+	axis: 'x' | 'y' | 'z' = 'z'
+): void {
 	meshes.forEach((mesh) => {
-		mesh.position.y -= offsetY;
+		mesh.position[axis] -= offset;
 	});
 }
 
 /**
- * Computes the combined world-axis-aligned bounding box of a set of meshes.
- * Correctly accounts for mesh transformations (rotation, position, scale).
+ * Computes the combined world-axis-aligned bounding box of a set of objects (meshes, lines, points).
+ * Correctly accounts for transformations (rotation, position, scale).
  */
-export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
+export function computeCombinedBoundingBox(meshes: THREE.Object3D[]): THREE.Box3 {
 	const combinedBoundingBox = new THREE.Box3();
 	if (meshes.length === 0) return combinedBoundingBox;
 	meshes.forEach((mesh) => {
@@ -164,8 +172,16 @@ export function computeCombinedBoundingBox(meshes: THREE.Mesh[]): THREE.Box3 {
 }
 
 /**
- * Clears the given THREE.Scene by removing all non-floor top-level children and
- * recursively disposing of their geometry and materials.
+ * `userData.id`s of scene infrastructure that is created once at init and must survive content
+ * updates: the floor, the grid, and the CSS2D label layer's group. Content (meshes/lines/points)
+ * carries no such id and is cleared on every solve.
+ */
+const PERSISTENT_SCENE_IDS = new Set(['floor', 'grid', 'label-layer']);
+
+/**
+ * Clears the given THREE.Scene by removing all top-level content children (everything except
+ * persistent infrastructure, see {@link PERSISTENT_SCENE_IDS}) and recursively disposing of their
+ * geometry and materials.
  *
  * Removes at the top level rather than traversing for meshes, so parent Groups
  * don't accumulate as ghost nodes after their mesh children are disposed.
@@ -175,15 +191,22 @@ function clearScene(scene: THREE.Scene): void {
 	const topLevel = [...scene.children];
 
 	topLevel.forEach((object) => {
-		if (object.userData.id === 'floor') return;
+		// Persistent scene infrastructure (floor, grid, the CSS2D label layer) outlives content
+		// updates — it's added once at init, not per solve. Removing the label-layer group here
+		// orphans it, so labels created afterwards never render (the CSS2D renderer walks the live
+		// scene and never finds them).
+		if (PERSISTENT_SCENE_IDS.has(object.userData.id)) return;
 
-		// Recursively dispose all meshes in this subtree
+		// Recursively dispose all renderable objects (meshes, lines, points) in this subtree.
 		object.traverse((child) => {
-			if (!(child instanceof THREE.Mesh)) return;
+			const renderable = child as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
 
-			child.geometry?.dispose();
+			renderable.geometry?.dispose();
 
-			const materials = Array.isArray(child.material) ? child.material : [child.material];
+			const material = renderable.material;
+			if (!material) return;
+			const materials = Array.isArray(material) ? material : [material];
 			materials.forEach((material) => {
 				// Walk only own enumerable properties — `for...in` on a Three.js material
 				// also iterates the prototype chain, which is needlessly expensive.

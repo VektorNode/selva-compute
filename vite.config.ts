@@ -10,7 +10,7 @@ export default defineConfig({
 	root: 'examples',
 	server: {
 		port: 5173,
-		open: '/viewer_example.html',
+		open: '/index.html',
 		fs: { allow: ['..'] }
 	}
 });

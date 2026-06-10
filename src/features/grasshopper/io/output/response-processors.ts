@@ -171,6 +171,9 @@ export function getValues<T = ParsedContext>(
 ): GetValuesResult<T> {
 	const { parseValues = true, rhino, stringOnly = false } = options;
 	const result: ParsedContext = {};
+	// Keys holding an aggregation array (vs. a single value that happens to BE an array,
+	// e.g. parsed JSON `[1,2,3]`) — `Array.isArray(result[key])` can't tell those apart.
+	const aggregated = new Set<string>();
 
 	for (const param of response.values) {
 		forEachTreeItem(param.InnerTree, (item) => {
@@ -185,12 +188,13 @@ export function getValues<T = ParsedContext>(
 
 			const value = extractItemValue(item.data, item.type, parseValues, rhino);
 
-			if (result[key] === undefined) {
+			if (!(key in result)) {
 				result[key] = value;
-			} else if (Array.isArray(result[key])) {
+			} else if (aggregated.has(key)) {
 				result[key].push(value);
 			} else {
 				result[key] = [result[key], value];
+				aggregated.add(key);
 			}
 		});
 	}

@@ -11,6 +11,24 @@
 // ============================================================================
 
 export { initThree } from './threejs/three-initializer.js';
+export { createCameraController } from './threejs/camera-controller.js';
+export type {
+	CameraController,
+	CameraProjection,
+	ViewPreset
+} from './threejs/camera-controller.js';
+export { createGrid } from './threejs/grid.js';
+export type { Grid, GridOptions } from './threejs/grid.js';
+export { createViewGizmo } from './threejs/view-gizmo.js';
+export type { ViewGizmo } from './threejs/view-gizmo.js';
+export { addEdges, removeEdges, isEdgeOverlay, EDGE_USERDATA_KIND } from './threejs/edges.js';
+export type { EdgeOptions } from './threejs/edges.js';
+export { createRenderPipeline } from './threejs/render-pipeline.js';
+export type { RenderPipeline, RenderPipelineOptions } from './threejs/render-pipeline.js';
+export { createLabelLayer } from './threejs/label-layer.js';
+export type { LabelLayer, LabelHandle } from './threejs/label-layer.js';
+export { createMeasureTool, snapToVertex } from './threejs/measure.js';
+export type { MeasureTool, MeasureOptions } from './threejs/measure.js';
 export {
 	updateScene,
 	parseColor,
@@ -49,6 +67,10 @@ export type {
 	FloorConfig,
 	RenderConfig,
 	ControlsConfig,
+	GridConfig,
+	GizmoConfig,
+	EdgesConfig,
+	MeasureConfig,
 	EventConfig
 } from './types';
 
@@ -58,6 +80,20 @@ export type {
 	SerializableMaterial,
 	MeshMetadata,
 	MaterialGroup,
+	DisplayBatch,
+	/** @deprecated Use {@link DisplayBatch}. */
 	MeshBatch,
 	DecompressedMeshData
 } from './webdisplay/types';
+
+export type {
+	DisplayItem,
+	DisplayCurve,
+	DisplayPoint,
+	DisplayItemBase,
+	DisplayIdentity,
+	DisplayPosition
+} from './display-items/types';
+
+export { parseDisplayItems } from './display-items/display-items-parser';
+export type { DisplayItemParseOptions } from './display-items/display-items-parser';

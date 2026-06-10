@@ -7,7 +7,7 @@ import { FLAG_FLOAT32, parseBinaryMeshBatch } from './binary-parser';
 
 import type { ParsedBinaryMeshBatch } from './binary-parser';
 import type {
-	MeshBatch,
+	DisplayBatch,
 	MaterialGroup,
 	MeshBatchParsingOptions,
 	SerializableMaterial
@@ -44,7 +44,7 @@ export async function parseMeshBatch(
 
 	try {
 		const parseStart = performance.now();
-		const batch: MeshBatch = JSON.parse(batchJson);
+		const batch: DisplayBatch = JSON.parse(batchJson);
 		const parseTime = performance.now() - parseStart;
 
 		return await parseMeshBatchObject(batch, options, { parseTime, perfStart });
@@ -55,18 +55,18 @@ export async function parseMeshBatch(
 }
 
 /**
- * Parses a MeshBatch object and creates Three.js meshes.
+ * Parses a DisplayBatch object and creates Three.js meshes from its mesh blob.
  *
  * The path is synchronous internally — `parseBinaryMeshBatch` does no IO, just typed-array views
  * over the blob. The function stays `async` so callers don't have to change shape if we move
  * parsing into a worker later.
  *
- * @param batch - MeshBatch object
+ * @param batch - DisplayBatch object
  * @param options - Rendering options
  * @returns Promise resolving to array of Three.js mesh objects
  */
 export async function parseMeshBatchObject(
-	batch: MeshBatch,
+	batch: DisplayBatch,
 	options?: MeshBatchParsingOptions & {
 		/** Scale factor to apply to meshes (e.g., for unit conversion) */
 		scaleFactor?: number;
@@ -272,15 +272,16 @@ function buildMeshesFromParsed(
 /**
  * Reconstructs world-unit float32 positions from int16 quantized values.
  *
- * Mirrors the encoder formula: `world = origin + (q + 32767) * scale`. When
- * `applyCoordinateTransform=true` we fold the Rhino Z-up -> Three Y-up shuffle into the same pass
- * (`(x, y, z) -> (x, z, -y)`), saving a second walk over the buffer.
+ * Mirrors the encoder formula: `world = origin + (q + 32767) * scale`. Selva keeps one coordinate
+ * frame end to end (the Three scene is Rhino's Z-up frame — see `../coordinate-transform.ts`), so
+ * vertices pass through unrotated. `_applyCoordinateTransform` is retained for call-site
+ * compatibility and no longer changes the output.
  */
 function dequantizeInt16(
 	q: Int16Array,
 	origin: [number, number, number],
 	scale: [number, number, number],
-	applyCoordinateTransform: boolean
+	_applyCoordinateTransform: boolean
 ): Float32Array {
 	const out = new Float32Array(q.length);
 	const ox = origin[0];
@@ -290,47 +291,25 @@ function dequantizeInt16(
 	const sy = scale[1];
 	const sz = scale[2];
 
-	if (applyCoordinateTransform) {
-		// Rotate -90 deg around X: (x, y, z) -> (x, z, -y)
-		for (let i = 0; i < q.length; i += 3) {
-			const wx = ox + (q[i]! + 32767) * sx;
-			const wy = oy + (q[i + 1]! + 32767) * sy;
-			const wz = oz + (q[i + 2]! + 32767) * sz;
-			out[i] = wx;
-			out[i + 1] = wz;
-			out[i + 2] = -wy;
-		}
-	} else {
-		for (let i = 0; i < q.length; i += 3) {
-			out[i] = ox + (q[i]! + 32767) * sx;
-			out[i + 1] = oy + (q[i + 1]! + 32767) * sy;
-			out[i + 2] = oz + (q[i + 2]! + 32767) * sz;
-		}
+	for (let i = 0; i < q.length; i += 3) {
+		out[i] = ox + (q[i]! + 32767) * sx;
+		out[i + 1] = oy + (q[i + 1]! + 32767) * sy;
+		out[i + 2] = oz + (q[i + 2]! + 32767) * sz;
 	}
 
 	return out;
 }
 
 /**
- * For float32 batches: when no transform is needed we can pass through the parser's view; the
- * caller doesn't mutate it. When the rotation is needed we have to allocate.
+ * For float32 batches the parser's view is already in the scene frame (Rhino Z-up), so we pass it
+ * through without copying. `_applyCoordinateTransform` is retained for call-site compatibility and
+ * no longer rotates.
  */
 function maybeRotateFloat32Vertices(
 	vertices: Float32Array,
-	applyCoordinateTransform: boolean
+	_applyCoordinateTransform: boolean
 ): Float32Array {
-	if (!applyCoordinateTransform) return vertices;
-
-	const out = new Float32Array(vertices.length);
-	for (let i = 0; i < vertices.length; i += 3) {
-		const x = vertices[i]!;
-		const y = vertices[i + 1]!;
-		const z = vertices[i + 2]!;
-		out[i] = x;
-		out[i + 1] = z;
-		out[i + 2] = -y;
-	}
-	return out;
+	return vertices;
 }
 
 // ============================================================================

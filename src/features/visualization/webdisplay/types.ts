@@ -1,3 +1,6 @@
+import type { DisplayItem } from '../display-items/types.js';
+import type { RhinoModule } from 'rhino3dm';
+
 /**
  * Material properties for Three.js rendering.
  */
@@ -50,14 +53,18 @@ export interface MaterialGroup {
 }
 
 /**
- * Batched mesh data optimized for Three.js rendering.
+ * One Display component's payload, ready for Three.js rendering.
  *
  * `compressedData` contains the binary "SLVA" blob (header + metadata JSON + quantized int16 or
  * float32 vertices + uint32 indices), base64-encoded for transit inside the values JSON envelope.
  * The blob is opaque to the outer JSON: a future binary WebSocket frame can drop the base64 step
  * without changing this shape.
+ *
+ * Today this carries only meshes (the binary blob). It is named `DisplayBatch` rather than
+ * `MeshBatch` because it is the seam through which non-mesh display items (curves, points, and
+ * later labels/icons) also travel — those ride as JSON alongside the mesh blob, not inside it.
  */
-export interface MeshBatch {
+export interface DisplayBatch {
 	/** Array of unique materials */
 	materials: SerializableMaterial[];
 	/** Groups of meshes organized by material */
@@ -67,7 +74,20 @@ export interface MeshBatch {
 	/** InstanceGuid of the WebDisplay GH component that produced this batch.
 	 *  Combined with MeshMetadata.originalIndex to backtrack any mesh to its GH source. */
 	sourceComponentId?: string;
+	/**
+	 * Non-mesh display items (curves, points; later labels/icons) — see {@link DisplayItem}.
+	 * Optional: omitted when there are none, so mesh-only batches are unchanged on the wire. These
+	 * ride as JSON alongside the mesh blob and are parsed by the separate `display-items` path, not
+	 * the SLVA mesh parser.
+	 */
+	items?: DisplayItem[];
 }
+
+/**
+ * @deprecated Renamed to {@link DisplayBatch} — the payload now carries more than meshes.
+ * This alias keeps existing imports compiling; remove it once consumers migrate.
+ */
+export type MeshBatch = DisplayBatch;
 
 /**
  * Decoded geometry payload from a binary mesh batch blob.
@@ -106,6 +126,11 @@ export interface MeshExtractionOptions {
 	allowScaling?: boolean;
 	/** Apply automatic ground offset positioning (Z=0). Defaults to true. */
 	allowAutoPosition?: boolean;
+	/**
+	 * rhino3dm instance for decoding curve display items. selva-compute does not own the WASM
+	 * instance; the host threads it in. Omit to skip curves (points still render).
+	 */
+	rhino?: RhinoModule;
 	/** Enable verbose logging. Defaults to false. */
 	debug?: boolean;
 }

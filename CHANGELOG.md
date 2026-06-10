@@ -1,5 +1,142 @@
 # @selvajs/compute
 
+## 2.1.0-beta.7
+
+### Patch Changes
+
+- fdcc1f8: Fix measurement/dimension labels never appearing in viewers that stream new content (e.g. per
+  Grasshopper solve).
+  - `updateScene`/`clearScene` removed every top-level scene child except the floor on each update,
+    which detached the persistent CSS2D `label-layer` group. Labels added afterwards were parented to
+    an orphaned group, so the CSS2D renderer (which walks the live scene) never injected their DOM.
+    `clearScene` now preserves persistent infrastructure — `floor`, `grid`, and `label-layer` — across
+    content updates. Demos that add geometry directly (never calling `updateScene`) were unaffected,
+    which is why the label only went missing in consumer apps.
+  - The CSS2D label overlay also gets an explicit `z-index` so it stacks above container scrims (e.g.
+    blur/loading overlays) that previously painted over it, while staying below menu/popover layers.
+
+## 2.1.0-beta.6
+
+### Patch Changes
+
+- cf78444: Fix measurement/dimension labels being hidden behind host viewer overlays. The CSS2D label
+  overlay now sets an explicit `z-index` so it stacks above container scrims (e.g. blur/loading
+  overlays) that previously painted over it, while staying below typical menu/popover layers.
+
+## 2.1.0-beta.5
+
+### Patch Changes
+
+- a9b134b: Extend the measurement tool to lines and points, not just meshes.
+  - `snapToVertex` now snaps line hits to the nearer endpoint of the struck segment and point hits to
+    the struck vertex, in addition to the existing mesh triangle-vertex snapping. Hits without usable
+    vertex indices (e.g. fat `Line2`) still fall back to the raw point.
+  - Line and Points raycast thresholds are raised per-pick, scaled by the view distance, so thin lines
+    and points are actually clickable at any zoom instead of being nearly impossible to hit with the
+    default ~1-unit threshold.
+
+## 2.1.0-beta.4
+
+### Minor Changes
+
+- 9982b33: Unify the coordinate frame: the Three.js scene is now Rhino's frame (Z-up), end to end.
+
+  Previously the display pipeline rotated Rhino Z-up geometry into Three's native Y-up
+  (`(x, y, z) → (x, z, −y)`) during mesh decompression and display-item parsing. That hidden
+  rotation meant every feature producing or consuming positions — measurements, mesh metadata,
+  label anchors, picking, the new camera presets/grid — had to round-trip through it or silently
+  land in the wrong frame.
+
+  The rotation is removed everywhere. A Rhino point `(x, y, z)` is now the Three point `(x, y, z)`:
+  - `rhinoToThree` is the identity (kept, deprecated, for call-site compatibility).
+  - The int16/float32 vertex paths in `webdisplay/batch-parser.ts` pass vertices through unrotated.
+  - `initThree` orients the camera, default iso position, sunlight, floor, and reference grid to the
+    scene up axis (Z-up by default); the camera controller's presets are likewise up-derived.
+
+  **Breaking:** any consumer that assumed viewer geometry was Y-up (e.g. reading mesh vertex
+  positions, placing objects, or computing directions in Three space) must drop the
+  `(x, z, −y)` conversion — Three space now equals Rhino space. The `applyTransforms` option is
+  retained but no longer rotates; it will be removed in a future release.
+
+### Patch Changes
+
+- 9982b33: Make the measurement tool easier to read and aim, and report per-axis deltas.
+  - Distance labels now carry a default style (dark translucent pill, light text) so they stay
+    legible on any background instead of inheriting the page color (previously invisible white-on-white).
+    Passing `labelClassName` still opts out of all default styling.
+  - The tool previews the snap point: a ghost marker follows the cursor and jumps to the vertex a
+    click would lock onto, so you can aim before committing. `MeasureTool` gains `handleMove(event)`,
+    which `initThree` wires to canvas `mousemove`.
+  - Orbiting/panning no longer disturbs a measurement: the `click` a drag fires on release is ignored
+    (pointer moved past a small slop threshold), so in-progress points and finished measurements survive
+    rotation instead of being cleared or mis-placed.
+  - The default label now shows the per-axis breakdown (`Δx`/`Δy`/`Δz`) under the total distance. The
+    `format` callback signature widens to `(distance, delta) => string`; existing `(distance) => string`
+    callbacks remain valid.
+
+- 9982b33: Make the viewer's camera controller, presets, and grid respect the scene up axis.
+
+  The CAD tooling assumed Three's native Y-up, but Selva scenes are Z-up. `initThree` set
+  `scene.up` to Z yet never set `camera.up`, so OrbitControls orbited as if Y-up and the
+  preset views (`top`/`front`/…) framed the wrong faces; the grid also defaulted to the
+  horizontal Y-up plane.
+  - `initThree` now sets `camera.up` to the configured `sceneUp` _before_ constructing
+    OrbitControls and the camera controller (both capture the orbit/preset basis from up).
+  - The camera controller derives its preset view directions, iso angle, and orthographic
+    camera up from the up axis instead of a hardcoded Y-up table, via a new optional `up`
+    dependency (defaults to the perspective camera's up).
+  - The grid's default plane is derived from the up axis (Z-up → `plane: 'z'`), so the grid
+    lies under the model without callers passing `plane` explicitly. An explicit `plane`
+    still wins.
+
+  No API changes; behavior is corrected for non-Y-up scenes and unchanged for Y-up.
+
+## 2.1.0-beta.3
+
+### Minor Changes
+
+- 15cdcfb: Export the CAD viewer tooling from the public `visualization` entry point.
+
+  The camera controller, reference grid, view gizmo, edge overlays, label layer, and
+  measurement tool shipped in 2.1.0-beta.1 were wired through `initThree` at runtime, but
+  their factories and types were only re-exported from the internal
+  `features/visualization/index.ts` barrel — not from `src/visualization.ts`, the actual
+  published entry. Consumers could enable the tools via options and read them off the
+  `initThree` return, but could not import the supporting type names
+  (`CameraController`, `MeasureTool`, `ViewPreset`, `CameraProjection`, …) or the
+  config types (`GridConfig`, `GizmoConfig`, `EdgesConfig`, `MeasureConfig`).
+  - Re-export `createCameraController`, `createGrid`, `createViewGizmo`, `addEdges`/`removeEdges`/`isEdgeOverlay`, `createRenderPipeline`, `createLabelLayer`, `createMeasureTool`/`snapToVertex` and their types from `visualization`.
+  - Re-export the `GridConfig`/`GizmoConfig`/`EdgesConfig`/`MeasureConfig` option types.
+  - Also surface `parseColor`, `applyOffset`, and `computeCombinedBoundingBox` from `three-helpers`.
+
+  Additive only — no existing export changed.
+
+## 2.1.0-beta.2
+
+### Minor Changes
+
+- 38cf55d: Add optional `metadata` (`Record<string, string>`) to `FileData`, carrying arbitrary key/value pairs attached in Grasshopper through to downstream consumers for tagging and indexing. Optional and backwards-compatible — existing payloads and the `isFileData` guard are unaffected.
+
+### Patch Changes
+
+- 38cf55d: Make `GrasshopperClient.create()` resilient to a cold or briefly-busy-but-up Compute server.
+
+  The pre-flight `/healthcheck` probe was a single-sample boolean gate with no retry and no timeout, so one missed probe (warm-up, a transient network blip, momentary non-200) made construction throw `NETWORK_ERROR` even though the server was online.
+  - `create()` now retries the healthcheck with exponential backoff (default 3 probes, 250ms→1s) before failing, configurable via the existing `config.retry` policy, and disposes the client on final failure.
+  - `isServerOnline(timeoutMs = 5000)` now bounds the probe with `AbortSignal.timeout` so a hung connection can't stall the caller; pass `0` to disable. The probe in `create()` always uses its own timeout, independent of `config.timeoutMs` (which may be `0` for long solves).
+
+## 2.1.0-beta.1
+
+### Minor Changes
+
+- 5b8c969: Expand the viewer with CAD-style tooling: camera controller (2D/3D toggle, preset views, rotate lock), infinite fading reference grid, mesh edge overlays, label layer, and a two-click measurement tool.
+
+## 2.1.0-beta.0
+
+### Minor Changes
+
+- Add display items and DisplayBatch support for visualizing non-mesh objects (curves, points) with coordinate transformation.
+
 ## 2.0.0
 
 ### Major Changes

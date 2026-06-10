@@ -56,12 +56,25 @@ export default class ComputeServerStats {
 
 	/**
 	 * Check if the server is online.
+	 *
+	 * This is a single-sample probe: it returns `true` only on a 2xx from
+	 * `/healthcheck`, and `false` for every other outcome (non-2xx, network
+	 * error, or timeout). A cold or briefly-busy-but-up server can therefore
+	 * read as offline — callers that gate on this (e.g. client construction)
+	 * should retry rather than treat a single `false` as authoritative.
+	 *
+	 * @param timeoutMs - Abort the probe after this many ms (default: 5000).
+	 *   Pass `0` to disable the timeout. Prevents a hung connection from
+	 *   stalling the caller indefinitely.
 	 */
-	public async isServerOnline(): Promise<boolean> {
+	public async isServerOnline(timeoutMs: number = 5000): Promise<boolean> {
 		this.ensureNotDisposed();
 
 		const url = `${this.serverUrl}/healthcheck`;
 		const init: RequestInit = { headers: this.buildHeaders(), method: 'GET' };
+		if (timeoutMs > 0) {
+			init.signal = AbortSignal.timeout(timeoutMs);
+		}
 
 		try {
 			const response = await fetch(url, init);

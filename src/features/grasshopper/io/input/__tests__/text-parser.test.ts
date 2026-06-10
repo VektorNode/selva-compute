@@ -32,6 +32,15 @@ describe('text parser', () => {
 				'Hello World'
 			);
 		});
+
+		it('strips only the leading quote when the trailing quote is missing', () => {
+			// Regression: slice(1, -1) on '"abc' dropped the last character ('ab').
+			expect(parseText(createTextInputSchema({ default: '"abc' })).default).toBe('abc');
+		});
+
+		it('keeps a string that only ends with a quote intact', () => {
+			expect(parseText(createTextInputSchema({ default: 'abc"' })).default).toBe('abc"');
+		});
 	});
 
 	describe('array handling', () => {

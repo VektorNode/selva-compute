@@ -146,10 +146,9 @@ describe('parseMeshBatchObject', () => {
 	});
 
 	describe('coordinate transform', () => {
-		it('rotates by -90deg around X: (x, y, z) -> (x, z, -y)', async () => {
-			// Derived from applyCoordinateTransform with cos(-PI/2)=0, sin(-PI/2)=-1:
-			//   y' = y*cos - z*sin = z
-			//   z' = y*sin + z*cos = -y
+		it('keeps vertices in the Rhino Z-up frame (no rotation) even with applyTransforms=true', async () => {
+			// Selva keeps one coordinate frame end to end: the Three scene IS Rhino's Z-up frame, so
+			// vertices pass through unrotated. The legacy applyTransforms flag no longer rotates.
 			// Use forceFloat32 so we can compare exact float values without int16 quantization
 			// noise (the quantized path is covered by binary-parser.test.ts).
 			const { batch, rawVertices } = buildMeshBatch({
@@ -173,8 +172,8 @@ describe('parseMeshBatchObject', () => {
 				const oz = rawVertices[v * 3 + 2]!;
 
 				expect(position.getX(v)).toBeCloseTo(ox, 5);
-				expect(position.getY(v)).toBeCloseTo(oz, 5);
-				expect(position.getZ(v)).toBeCloseTo(-oy, 5);
+				expect(position.getY(v)).toBeCloseTo(oy, 5);
+				expect(position.getZ(v)).toBeCloseTo(oz, 5);
 			}
 		});
 
@@ -286,7 +285,7 @@ describe('parseMeshBatchObject', () => {
 });
 
 describe('parseMeshBatch (JSON entry point)', () => {
-	it('parses a JSON-stringified MeshBatch end-to-end', async () => {
+	it('parses a JSON-stringified DisplayBatch end-to-end', async () => {
 		const { batch } = buildMeshBatch({ materialCount: 2, meshCount: 6, vertsPerMesh: 4 });
 
 		const meshes = await parseMeshBatch(JSON.stringify(batch), {

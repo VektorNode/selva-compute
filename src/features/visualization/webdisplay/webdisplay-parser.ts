@@ -3,10 +3,13 @@ import * as THREE from 'three';
 import { applyOffset, computeCombinedBoundingBox } from '../threejs/three-helpers.js';
 import { getLogger } from '@/core';
 
+import { parseDisplayItems } from '../display-items/display-items-parser';
+
 import { parseMeshBatch } from './batch-parser';
 
 import type { DataItem, GrasshopperComputeResponse } from '@/features/grasshopper/types';
-import type { MeshExtractionOptions, MeshBatchParsingOptions } from './types';
+import type { DisplayBatch, MeshExtractionOptions, MeshBatchParsingOptions } from './types';
+import type { RhinoModule } from 'rhino3dm';
 
 // Constants
 export const SCALE_FACTORS: Record<string, number> = {
@@ -66,28 +69,29 @@ const DISPLAY_COMPONENT_TYPE = 'Display';
 export async function getThreeMeshesFromComputeResponse(
 	data: GrasshopperComputeResponse,
 	options?: MeshExtractionOptions
-): Promise<THREE.Mesh[]> {
+): Promise<THREE.Object3D[]> {
 	const startTime = performance.now();
-	const meshes: THREE.Mesh[] = [];
+	const objects: THREE.Object3D[] = [];
 
 	const {
 		allowScaling = true,
 		allowAutoPosition = true,
+		rhino,
 		debug = false,
 		parsing: parsingOptions = {}
 	} = options ?? {};
 
 	try {
 		const scaleFactor = allowScaling ? getScaleFactor(data.modelunits) : 1;
-		await extractMeshesFromData(data, meshes, scaleFactor, parsingOptions, debug);
+		await extractDisplayFromData(data, objects, scaleFactor, parsingOptions, rhino, debug);
 
 		if (allowAutoPosition) {
-			applyGroundOffset(meshes);
+			applyGroundOffset(objects);
 		}
 
-		return meshes;
+		return objects;
 	} catch (error) {
-		handleError(error, meshes);
+		handleError(error, objects);
 		throw error;
 	} finally {
 		if (debug) {
@@ -104,13 +108,14 @@ function getScaleFactor(modelUnits: string): number {
 }
 
 /**
- * Extracts meshes from compute response data.
+ * Extracts meshes and non-mesh display items (curves, points) from compute response data.
  */
-async function extractMeshesFromData(
+async function extractDisplayFromData(
 	data: GrasshopperComputeResponse,
-	meshes: THREE.Mesh[],
+	objects: THREE.Object3D[],
 	scaleFactor: number,
 	parsingOptions: MeshBatchParsingOptions,
+	rhino: RhinoModule | undefined,
 	debug: boolean
 ): Promise<void> {
 	for (const value of data.values) {
@@ -120,71 +125,100 @@ async function extractMeshesFromData(
 			const branch = innerTree[path];
 			if (!branch) continue;
 
-			await processDataBranch(branch, meshes, scaleFactor, parsingOptions, debug);
+			await processDataBranch(branch, objects, scaleFactor, parsingOptions, rhino, debug);
 		}
 	}
 }
 
 /**
- * Processes a single data branch to extract MeshBatch display meshes.
+ * Processes a single data branch to extract a DisplayBatch's meshes (binary blob) and items
+ * (curves/points JSON). Both get the same unit scale so they share one frame.
  */
 async function processDataBranch(
 	branch: DataItem[],
-	meshes: THREE.Mesh[],
+	objects: THREE.Object3D[],
 	scaleFactor: number,
 	parsingOptions: MeshBatchParsingOptions,
+	rhino: RhinoModule | undefined,
 	debug: boolean
 ): Promise<void> {
 	for (const item of branch) {
-		if (item.type.includes(DISPLAY_COMPONENT_TYPE)) {
-			const mergedParsingOptions = {
-				mergeByMaterial: true,
-				applyTransforms: true,
-				debug: false,
-				...parsingOptions
-			};
+		if (!item.type.includes(DISPLAY_COMPONENT_TYPE)) continue;
 
-			const batchMeshes = await parseMeshBatch(item.data, mergedParsingOptions);
+		const mergedParsingOptions = {
+			mergeByMaterial: true,
+			applyTransforms: true,
+			debug: false,
+			...parsingOptions
+		};
 
-			if (scaleFactor !== 1) {
-				for (const mesh of batchMeshes) {
-					mesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
-				}
+		const batchMeshes = await parseMeshBatch(item.data, mergedParsingOptions);
+
+		const batchItems = parseDisplayItems(extractBatchItems(item.data), {
+			rhino,
+			applyTransforms: mergedParsingOptions.applyTransforms
+		});
+
+		const batchObjects: THREE.Object3D[] = [...batchMeshes, ...batchItems];
+
+		if (scaleFactor !== 1) {
+			for (const obj of batchObjects) {
+				obj.scale.set(scaleFactor, scaleFactor, scaleFactor);
 			}
+		}
 
-			meshes.push(...batchMeshes);
+		objects.push(...batchObjects);
 
-			if (debug) {
-				getLogger().debug(`Extracted ${batchMeshes.length} meshes from batch`);
-			}
+		if (debug) {
+			getLogger().debug(
+				`Extracted ${batchMeshes.length} meshes and ${batchItems.length} items from batch`
+			);
 		}
 	}
 }
 
 /**
- * Applies vertical offset to position meshes on the Z=0 plane.
+ * Pulls the `items` array off a raw DisplayBatch payload, tolerating either a parsed object or a
+ * JSON string (the blob-bearing `item.data` is the same envelope the mesh parser reads).
  */
-function applyGroundOffset(meshes: THREE.Mesh[]): void {
-	if (meshes.length === 0) return;
+function extractBatchItems(data: unknown): DisplayBatch['items'] {
+	const batch = typeof data === 'string' ? safeParse(data) : (data as DisplayBatch | undefined);
+	return batch?.items;
+}
 
-	const combinedBoundingBox = computeCombinedBoundingBox(meshes);
-	const offsetY = combinedBoundingBox.min.y;
-	applyOffset(meshes, offsetY);
+function safeParse(s: string): DisplayBatch | undefined {
+	try {
+		return JSON.parse(s) as DisplayBatch;
+	} catch {
+		return undefined;
+	}
 }
 
 /**
- * Handles errors by disposing created meshes and logging.
+ * Applies vertical offset to position objects on the Z=0 plane (the ground of the unified
+ * Z-up scene frame — see ../coordinate-transform.ts).
  */
-function handleError(error: unknown, meshes: THREE.Mesh[]): void {
+function applyGroundOffset(meshes: THREE.Object3D[]): void {
+	if (meshes.length === 0) return;
+
+	const combinedBoundingBox = computeCombinedBoundingBox(meshes);
+	applyOffset(meshes, combinedBoundingBox.min.z, 'z');
+}
+
+/**
+ * Handles errors by disposing created objects and logging.
+ */
+function handleError(error: unknown, meshes: THREE.Object3D[]): void {
 	getLogger().error('An unexpected error occurred:', error);
 	disposeMeshes(meshes);
 }
 
 /**
- * Disposes of all meshes and their associated resources.
+ * Disposes of all objects (meshes, lines, points) and their associated resources.
  */
-function disposeMeshes(meshes: THREE.Mesh[]): void {
-	for (const mesh of meshes) {
+function disposeMeshes(meshes: THREE.Object3D[]): void {
+	for (const obj of meshes) {
+		const mesh = obj as Partial<THREE.Mesh> & THREE.Object3D;
 		if (mesh.geometry) {
 			mesh.geometry.dispose();
 		}

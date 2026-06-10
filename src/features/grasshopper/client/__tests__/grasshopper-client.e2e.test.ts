@@ -43,9 +43,35 @@ describe('GrasshopperClient.create', () => {
 		route({
 			'/healthcheck': () => createMockResponse({}, { ok: false, status: 503, statusText: 'down' })
 		});
-		await expect(GrasshopperClient.create({ serverUrl: SERVER })).rejects.toMatchObject({
+		await expect(
+			GrasshopperClient.create({ serverUrl: SERVER, retry: { attempts: 0 } })
+		).rejects.toMatchObject({
 			code: 'NETWORK_ERROR'
 		});
+	});
+
+	it('retries a flaky healthcheck and succeeds once it goes 2xx', async () => {
+		// Cold/busy-but-up server: first probe flickers 503, then recovers.
+		let calls = 0;
+		fetchMock.mockImplementation((url: string) => {
+			if (url.endsWith('/healthcheck')) {
+				calls += 1;
+				return Promise.resolve(
+					calls === 1
+						? createMockResponse({}, { ok: false, status: 503, statusText: 'warming up' })
+						: onlineServer()
+				);
+			}
+			return Promise.reject(new Error(`unrouted fetch: ${url}`));
+		});
+
+		const client = await GrasshopperClient.create({
+			serverUrl: SERVER,
+			retry: { baseDelayMs: 1 }
+		});
+		expect(client).toBeInstanceOf(GrasshopperClient);
+		expect(calls).toBe(2);
+		await client.dispose();
 	});
 });
 

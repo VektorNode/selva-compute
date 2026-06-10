@@ -1,0 +1,16 @@
+{
+  "mode": "exit",
+  "tag": "beta",
+  "initialVersions": {
+    "@selvajs/compute": "2.0.0"
+  },
+  "changesets": [
+    "measure-label-visibility",
+    "measure-label-z-index",
+    "measure-lines-and-points",
+    "measure-tool-readability",
+    "unify-coordinate-frame-zup",
+    "viewer-tools-public-exports",
+    "viewer-up-axis-aware"
+  ]
+}

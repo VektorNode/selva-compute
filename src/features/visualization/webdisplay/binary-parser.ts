@@ -25,9 +25,9 @@ const GEOMETRY_HEADER_BYTES =
 /**
  * Metadata JSON embedded inside the binary blob.
  *
- * This is the same shape as a `MeshBatch` minus the `compressedData` field (the blob is opaque to
- * its own metadata header). Kept separate from the public `MeshBatch` type because the blob's
- * metadata never carries `compressedData` itself — it would be circular.
+ * This is the mesh-blob subset of a `DisplayBatch` minus the `compressedData` field (the blob is
+ * opaque to its own metadata header). Kept separate from the public `DisplayBatch` type because the
+ * blob's metadata never carries `compressedData` itself — it would be circular.
  */
 export interface BinaryMeshMetadata {
 	materials: SerializableMaterial[];

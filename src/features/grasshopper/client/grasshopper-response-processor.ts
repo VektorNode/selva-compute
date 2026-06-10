@@ -178,20 +178,20 @@ export default class GrasshopperResponseProcessor {
 	 *
 	 * @example
 	 * ```ts
-	 * processor.getAndDownloadFiles('gh-output');
+	 * await processor.getAndDownloadFiles('gh-output');
 	 * ```
 	 *
 	 * @example
 	 * ```ts
 	 * const extra = { name: 'notes.txt', data: 'Example' };
-	 * processor.getAndDownloadFiles('project', extra);
+	 * await processor.getAndDownloadFiles('project', extra);
 	 * ```
 	 */
-	public getAndDownloadFiles(
+	public async getAndDownloadFiles(
 		folderName: string,
 		additionalFiles?: FileBaseInfo[] | FileBaseInfo | null
-	) {
+	): Promise<void> {
 		const files = this.getFileData();
-		downloadFileData(files, folderName, additionalFiles);
+		await downloadFileData(files, folderName, additionalFiles);
 	}
 }

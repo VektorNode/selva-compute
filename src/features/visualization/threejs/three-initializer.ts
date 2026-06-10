@@ -4,20 +4,25 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { getLogger } from '@/core';
 import { ThreeInitializerOptions } from '../types';
+import { createCameraController, type CameraController } from './camera-controller';
+import { createGrid, type Grid } from './grid';
+import { createViewGizmo, type ViewGizmo } from './view-gizmo';
+import { addEdges } from './edges';
+import { createRenderPipeline, type RenderPipeline } from './render-pipeline';
+import { createLabelLayer, type LabelLayer } from './label-layer';
+import { createMeasureTool, type MeasureTool } from './measure';
 
 const defaultUp = new THREE.Vector3(0, 0, 1);
 
-// Returns scale-specific values for mm, cm, and m scales
-const getScaleValue = (scale: string, mmVal: number, cmVal: number, mVal: number): number => {
-	switch (scale) {
-		case 'mm':
-			return mmVal;
-		case 'cm':
-			return cmVal;
-		default:
-			return mVal;
-	}
-};
+/** Map an up vector to the grid's ground-plane axis (the axis the grid is laid perpendicular to). */
+function upToGroundPlane(up: THREE.Vector3): 'x' | 'y' | 'z' {
+	const ax = Math.abs(up.x);
+	const ay = Math.abs(up.y);
+	const az = Math.abs(up.z);
+	if (az >= ax && az >= ay) return 'z';
+	if (ay >= ax && ay >= az) return 'y';
+	return 'x';
+}
 
 /**
  * Initializes a Three.js environment with scene, camera, renderer, and event handling.
@@ -30,28 +35,162 @@ export const initThree = function (
 	camera: THREE.PerspectiveCamera;
 	controls: OrbitControls;
 	renderer: THREE.WebGLRenderer;
+	cameraController: CameraController;
+	grid: Grid | null;
+	gizmo: ViewGizmo | null;
+	/** Two-click distance measurement tool. Null unless `measure.enabled`; `setEnabled(true)` to use. */
+	measureTool: MeasureTool | null;
+	/**
+	 * Attach edge overlays to the meshes under `root` (no-op unless `edges.enabled`). Call after
+	 * loading meshes via `updateScene`, since meshes arrive after init.
+	 */
+	applyEdges: (root: THREE.Object3D) => void;
+	/** Toggle ambient occlusion at runtime — builds or tears down the postprocessing pipeline. */
+	setAmbientOcclusion: (enabled: boolean) => void;
+	/**
+	 * Refit the sun's shadow frustum to the current scene content for crisp shadows. Call after
+	 * loading or replacing geometry (e.g. after `updateScene`). No-op when sunlight/shadows are off.
+	 */
+	updateShadowBounds: () => void;
 	dispose: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
 } {
 	const config = applyDefaults(options || {});
 
+	const sceneUp = config.environment?.sceneUp || defaultUp;
+
 	const scene = createScene(config);
 	const camera = createCamera(config, canvas);
+	// Set the camera's up to the scene up BEFORE OrbitControls/the controller read it — OrbitControls
+	// captures the orbit basis from camera.up at construction, and the controller derives its presets
+	// and ortho camera from it. Without this, a Z-up scene would orbit and frame as if Y-up.
+	camera.up.copy(sceneUp);
 	const renderer = setupRenderer(canvas, config);
 	const controls = setupControls(camera, canvas, config);
 
+	// Tracks whichever camera (perspective or orthographic) is live; the controller swaps it.
+	// Render loop, resize, and raycasting all read through getActiveCamera so 2D/3D stays coherent.
+	const cameraController = createCameraController({
+		scene,
+		perspective: camera,
+		controls,
+		onActiveCameraChange: () => {},
+		up: sceneUp
+	});
+	const getActiveCamera = () => cameraController.getActiveCamera();
+
 	setupEnvironment(scene, config);
-	setupLighting(scene, config);
+	// The shadow-casting sun (null when sunlight or shadows are off). Its shadow frustum is fitted to
+	// the scene content below and again whenever the host calls updateShadowBounds after a geometry
+	// change — keeping shadow-map texels packed onto the model for crisp shadows at any scale.
+	const sunlight = setupLighting(scene, config);
+
+	/**
+	 * Refit the sun's shadow frustum to the current scene content. Call after loading or replacing
+	 * geometry (e.g. right after `updateScene`). No-op when there is no shadow-casting sun or no
+	 * content. Cheap: one bounds traversal, no per-frame cost.
+	 */
+	const updateShadowBounds = () => {
+		if (sunlight) fitShadowToContent(sunlight, computeContentBounds(scene));
+	};
 
 	if (config.floor?.enabled) {
 		addFloor(scene, config);
 	}
 
+	// Optional CAD aids: an infinite fading grid and the corner nav-cube gizmo. Both opt-in.
+	const grid = config.grid.enabled
+		? createGrid({
+				cellSize: config.grid.cellSize,
+				majorEvery: config.grid.majorEvery,
+				cellColor: config.grid.cellColor,
+				majorColor: config.grid.majorColor,
+				fadeDistance: config.grid.fadeDistance,
+				plane: config.grid.plane
+			})
+		: null;
+	if (grid) scene.add(grid.object);
+
+	const gizmo = config.gizmo.enabled
+		? createViewGizmo({ camera, domElement: canvas, controller: cameraController })
+		: null;
+
+	// HTML label overlay (CSS2D) and the measurement tool built on it. Both opt-in; the label layer
+	// is only created when something needs it (currently the measure tool).
+	const labelContainer = canvas.parentElement ?? canvas;
+	const labelLayer: LabelLayer | null = config.measure.enabled
+		? createLabelLayer(labelContainer, scene)
+		: null;
+	const measureTool: MeasureTool | null =
+		config.measure.enabled && labelLayer
+			? createMeasureTool({
+					canvas,
+					scene,
+					getActiveCamera,
+					labelLayer,
+					options: {
+						snapPixels: config.measure.snapPixels,
+						color: config.measure.color,
+						labelClassName: config.measure.labelClassName,
+						format: config.measure.format
+					}
+				})
+			: null;
+
 	const eventHandlers =
 		config.events.enableEventHandlers !== false
-			? setupEventHandlers(canvas, scene, camera, controls, config)
+			? setupEventHandlers(canvas, scene, getActiveCamera, camera, controls, config)
 			: { dispose: () => {}, fitToView: () => {}, clearSelection: () => {} };
+
+	// A drag to orbit/pan ends with a `click` on mouseup. Without guarding, that release click would
+	// be taken as a measurement point (placing a stray point or clearing a finished measurement when
+	// the user only meant to rotate). Record where the press started and treat the release as a click
+	// only if the pointer barely moved — a real click, not a drag.
+	const DRAG_SLOP_PX = 5;
+	let pressX = 0;
+	let pressY = 0;
+	const handlePointerDown = (event: MouseEvent) => {
+		pressX = event.clientX;
+		pressY = event.clientY;
+	};
+	const wasDrag = (event: MouseEvent) =>
+		Math.hypot(event.clientX - pressX, event.clientY - pressY) > DRAG_SLOP_PX;
+
+	// Capture-phase interceptors that pre-empt scene selection. Order: an active measurement claims
+	// the click first, then the gizmo. stopImmediatePropagation keeps the selection handler from
+	// also firing. (Both run in capture so they see the event before the bubble-phase selection.)
+	const handleToolClick = (event: MouseEvent) => {
+		if (wasDrag(event)) return; // an orbit/pan release, not a measurement click — leave it alone
+		if (measureTool?.handleClick(event)) {
+			event.stopImmediatePropagation();
+			return;
+		}
+		if (gizmo?.handleClick(event)) {
+			event.stopImmediatePropagation();
+		}
+	};
+	if (gizmo || measureTool) {
+		canvas.addEventListener('mousedown', handlePointerDown, { capture: true });
+		canvas.addEventListener('click', handleToolClick, { capture: true });
+	}
+	// Forward movement to the measure tool so it can preview the snap point under the cursor. Passive:
+	// it only reads, never consumes, so it never interferes with orbit/pan.
+	const handleToolMove = (event: MouseEvent) => measureTool?.handleMove(event);
+	if (measureTool) {
+		canvas.addEventListener('mousemove', handleToolMove, { passive: true });
+	}
+
+	// Edge overlays: bind the configured options into a closure the consumer calls after loading
+	// meshes. Always applies when called explicitly (the `edges.enabled` flag governs whether the
+	// host *intends* edges, but an explicit call should never be silently ignored).
+	const applyEdges = (root: THREE.Object3D) => {
+		addEdges(root, {
+			color: config.edges.color,
+			width: config.edges.width,
+			thresholdAngle: config.edges.thresholdAngle
+		});
+	};
 
 	const parent = canvas.parentElement;
 	const getCanvasSize = () =>
@@ -59,35 +198,93 @@ export const initThree = function (
 			? { width: parent.clientWidth, height: parent.clientHeight }
 			: { width: window.innerWidth, height: window.innerHeight };
 
+	// Optional AO postprocessing pipeline. Held in a mutable so it can be toggled at runtime
+	// (setAmbientOcclusion below); the loop reads it through getRenderPipeline each frame. When null,
+	// the loop uses the plain renderer.render path. Retargeted to the active camera every frame.
+	let renderPipeline: RenderPipeline | null = null;
+
+	const buildPipeline = (): RenderPipeline => {
+		const { width, height } = getCanvasSize();
+		const pixelRatio = Math.min(window.devicePixelRatio, 2);
+		const pipeline = createRenderPipeline(
+			renderer,
+			scene,
+			getActiveCamera(),
+			Math.max(1, width),
+			Math.max(1, height),
+			{
+				toneMapping: config.render.toneMapping ?? THREE.NeutralToneMapping,
+				toneMappingExposure: config.render.toneMappingExposure ?? 1,
+				aoIntensity: config.render.aoIntensity
+			}
+		);
+		pipeline.setSize(Math.max(1, width), Math.max(1, height), pixelRatio);
+		return pipeline;
+	};
+
+	const setAmbientOcclusion = (enabled: boolean) => {
+		if (enabled && !renderPipeline) {
+			renderPipeline = buildPipeline();
+		} else if (!enabled && renderPipeline) {
+			renderPipeline.dispose();
+			renderPipeline = null;
+		}
+	};
+
+	if (config.render.ambientOcclusion) renderPipeline = buildPipeline();
+
 	// Resize checked every frame so buffer resize and render happen in the same frame,
 	// preventing visible blank frames on resize
 	const { animate, dispose: disposeAnimation } = createAnimationLoop(
 		renderer,
 		scene,
 		camera,
+		getActiveCamera,
+		cameraController,
 		controls,
 		getCanvasSize,
-		config.events.onFrame
+		config.events.onFrame,
+		grid,
+		gizmo,
+		() => renderPipeline,
+		labelLayer
 	);
 	animate();
 
-	const sceneUp = config.environment?.sceneUp || defaultUp;
 	scene.up.set(sceneUp.x, sceneUp.y, sceneUp.z);
+
+	// Initial fit so any geometry already present at construction casts crisp shadows. Hosts that add
+	// geometry later (via updateScene) should call updateShadowBounds again afterwards.
+	updateShadowBounds();
 
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
+		if (gizmo || measureTool) {
+			canvas.removeEventListener('mousedown', handlePointerDown, { capture: true });
+			canvas.removeEventListener('click', handleToolClick, { capture: true });
+		}
+		if (measureTool) {
+			canvas.removeEventListener('mousemove', handleToolMove);
+		}
+		measureTool?.dispose();
+		labelLayer?.dispose();
+		gizmo?.dispose();
+		grid?.dispose();
+		renderPipeline?.dispose();
 		controls.dispose();
 		renderer.dispose();
 
 		scene.traverse((object) => {
-			if (object instanceof THREE.Mesh) {
-				object.geometry?.dispose();
-				if (Array.isArray(object.material)) {
-					object.material.forEach((material) => material.dispose());
-				} else {
-					object.material?.dispose();
-				}
+			// Dispose any renderable (mesh, line, points), not just meshes.
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
+
+			renderable.geometry?.dispose();
+			if (Array.isArray(renderable.material)) {
+				renderable.material.forEach((material) => material.dispose());
+			} else {
+				renderable.material?.dispose();
 			}
 		});
 	};
@@ -97,6 +294,13 @@ export const initThree = function (
 		camera,
 		controls,
 		renderer,
+		cameraController,
+		grid,
+		gizmo,
+		measureTool,
+		applyEdges,
+		setAmbientOcclusion,
+		updateShadowBounds,
 		dispose,
 		fitToView: eventHandlers.fitToView,
 		clearSelection: eventHandlers.clearSelection
@@ -170,11 +374,12 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 	return {
 		sceneScale: scale,
 		camera: {
+			// Default 3/4 iso for a Z-up scene: back-left and ABOVE (height on +Z).
 			position:
 				options.camera?.position ||
 				new THREE.Vector3(
 					-defaults.cameraDistance,
-					defaults.cameraDistance,
+					-defaults.cameraDistance,
 					defaults.cameraDistance
 				),
 			fov: options.camera?.fov || 20,
@@ -185,9 +390,10 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 		lighting: {
 			enableSunlight: options.lighting?.enableSunlight ?? true,
 			sunlightIntensity: options.lighting?.sunlightIntensity || 1,
+			// Sun overhead in a Z-up scene: height on +Z, offset across X/Y.
 			sunlightPosition:
 				options.lighting?.sunlightPosition ||
-				new THREE.Vector3(defaults.lightDistance, defaults.lightHeight, defaults.lightDistance),
+				new THREE.Vector3(defaults.lightDistance, defaults.lightDistance, defaults.lightHeight),
 			ambientLightColor: options.lighting?.ambientLightColor || new THREE.Color(0x404040),
 			ambientLightIntensity: options.lighting?.ambientLightIntensity || 1,
 			sunlightColor: options.lighting?.sunlightColor || 0xffffff // Default to white sunlight
@@ -214,7 +420,9 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			pixelRatio: options.render?.pixelRatio || Math.min(window.devicePixelRatio, 2),
 			toneMapping: options.render?.toneMapping || THREE.NeutralToneMapping,
 			toneMappingExposure: options.render?.toneMappingExposure || 1,
-			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false
+			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false,
+			ambientOcclusion: options.render?.ambientOcclusion ?? false,
+			aoIntensity: options.render?.aoIntensity ?? 1
 		},
 		controls: {
 			enableDamping: options.controls?.enableDamping ?? false,
@@ -225,6 +433,37 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			enablePan: options.controls?.enablePan ?? true,
 			minDistance: options.controls?.minDistance || defaults.minDistance,
 			maxDistance: options.controls?.maxDistance || Infinity
+		},
+		grid: {
+			// Defaults mirror createGrid's so the two never drift.
+			enabled: options.grid?.enabled ?? false,
+			cellSize: options.grid?.cellSize ?? 1,
+			majorEvery: options.grid?.majorEvery ?? 10,
+			cellColor: options.grid?.cellColor ?? 0x888888,
+			majorColor: options.grid?.majorColor ?? 0x444444,
+			fadeDistance: options.grid?.fadeDistance ?? 100,
+			// The "ground" plane is the one orthogonal to the scene up axis, so the grid lies under the
+			// model regardless of up convention (Z-up Rhino → 'z'; Y-up → 'y'). Explicit `plane` wins.
+			plane: options.grid?.plane ?? upToGroundPlane(options.environment?.sceneUp ?? defaultUp)
+		},
+		gizmo: {
+			enabled: options.gizmo?.enabled ?? false
+		},
+		edges: {
+			// Defaults mirror addEdges' so the two never drift.
+			enabled: options.edges?.enabled ?? false,
+			color: options.edges?.color ?? 0x222222,
+			width: options.edges?.width ?? 1.5,
+			thresholdAngle: options.edges?.thresholdAngle ?? 30
+		},
+		measure: {
+			// Visual defaults live in createMeasureTool; only `enabled` needs a value here, the rest
+			// pass through (undefined → the tool's own default).
+			enabled: options.measure?.enabled ?? false,
+			snapPixels: options.measure?.snapPixels,
+			color: options.measure?.color,
+			labelClassName: options.measure?.labelClassName,
+			format: options.measure?.format
 		},
 		events: {
 			onBackgroundClicked: options.events?.onBackgroundClicked,
@@ -240,6 +479,75 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			onFrame: options.events?.onFrame
 		}
 	};
+}
+
+/**
+ * Viewer aids (grid, floor, label overlay, measure markers) are not scene *content* — exclude them
+ * from fit-to-view bounds and other content queries. Tagged via `userData.id` at creation.
+ */
+const VIEWER_AID_IDS = new Set(['grid', 'floor', 'label-layer', 'measure']);
+function isViewerAid(object: THREE.Object3D): boolean {
+	let current: THREE.Object3D | null = object;
+	while (current) {
+		if (typeof current.userData.id === 'string' && VIEWER_AID_IDS.has(current.userData.id)) {
+			return true;
+		}
+		current = current.parent;
+	}
+	return false;
+}
+
+/**
+ * Axis-aligned bounds of the scene's renderable *content* — every visible mesh/line/points, with
+ * viewer aids excluded. The grid (a huge camera-tracking plane) and the floor would otherwise
+ * dominate the box. Shared by fit-to-view, pick-threshold scaling, and shadow-frustum fitting so
+ * they all measure the same thing. Returns an empty Box3 when there is no content.
+ */
+function computeContentBounds(scene: THREE.Scene): THREE.Box3 {
+	const box = new THREE.Box3();
+	scene.traverse((object) => {
+		const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+		if (object.visible && !isViewerAid(object) && renderable.geometry) {
+			box.expandByObject(object);
+		}
+	});
+	return box;
+}
+
+/**
+ * Fit a directional light's shadow camera to the scene content. The orthographic shadow frustum is
+ * sized to the content's bounding sphere (padded), so the fixed shadow-map texels cover only the
+ * model rather than a generous constant area — the dominant lever on shadow crispness. Near/far are
+ * derived from how far the light sits from the content centre, keeping depth precision tight.
+ *
+ * No-op when there is no content (an empty box would collapse the frustum to a point).
+ */
+function fitShadowToContent(light: THREE.DirectionalLight, bounds: THREE.Box3): void {
+	if (bounds.isEmpty()) return;
+
+	const center = bounds.getCenter(new THREE.Vector3());
+	// Bounding-sphere radius makes the frustum rotation-invariant: the light can shine from any
+	// angle and the model still fits, with no per-angle recompute. Pad so grazing-angle casters and
+	// soft-shadow (VSM) blur near the edges don't clip.
+	const radius = bounds.getSize(new THREE.Vector3()).length() * 0.5 * 1.2;
+
+	const cam = light.shadow.camera;
+	cam.left = -radius;
+	cam.right = radius;
+	cam.top = radius;
+	cam.bottom = -radius;
+
+	// Aim the shadow camera at the content centre. The light keeps its configured *position*; only
+	// its target moves, so the lighting direction is preserved while the shadow frustum recentres.
+	light.target.position.copy(center);
+	light.target.updateMatrixWorld();
+
+	// Near/far bracket the content along the light→centre axis. Clamp near to a small positive value
+	// so a light sitting inside the bounds can't push near ≤ 0.
+	const lightDistance = light.position.distanceTo(center);
+	cam.near = Math.max(radius * 0.01, lightDistance - radius);
+	cam.far = lightDistance + radius;
+	cam.updateProjectionMatrix();
 }
 
 function createScene(config: Required<ThreeInitializerOptions>): THREE.Scene {
@@ -287,9 +595,15 @@ function createAnimationLoop(
 	renderer: THREE.WebGLRenderer,
 	scene: THREE.Scene,
 	camera: THREE.PerspectiveCamera,
+	getActiveCamera: () => THREE.Camera,
+	cameraController: CameraController,
 	controls: OrbitControls,
 	getCanvasSize: () => { width: number; height: number },
-	onFrame?: (delta: number) => void
+	onFrame?: (delta: number) => void,
+	grid?: Grid | null,
+	gizmo?: ViewGizmo | null,
+	getRenderPipeline?: () => RenderPipeline | null,
+	labelLayer?: LabelLayer | null
 ): { animate: () => void; dispose: () => void } {
 	let animationId: number | null = null;
 	let lastTime = performance.now();
@@ -307,6 +621,12 @@ function createAnimationLoop(
 			renderer.setSize(width, height, false);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
+			// Reshape the orthographic frustum too, if it's the active projection.
+			cameraController.updateAspect(width, height);
+			// Keep the AO composer's render targets in step with the canvas.
+			getRenderPipeline?.()?.setSize(width, height, pixelRatio);
+			// CSS2D overlay matches the canvas's CSS size (not the pixel-ratio buffer size).
+			labelLayer?.setSize(width, height);
 		}
 	};
 
@@ -323,9 +643,30 @@ function createAnimationLoop(
 			controls.update();
 		}
 
+		// Keep the grid centered on the camera so it reads as infinite.
+		if (grid) grid.update(getActiveCamera().position);
+
+		// Advance the gizmo's fade/spin animation (no-op when idle).
+		if (gizmo) gizmo.update(delta);
+
 		onFrame?.(delta);
 
-		renderer.render(scene, camera);
+		const activeCamera = getActiveCamera();
+		const renderPipeline = getRenderPipeline?.();
+		if (renderPipeline) {
+			// AO path: composer owns the render. Retarget to the active camera in case 2D/3D swapped.
+			renderPipeline.setCamera(activeCamera);
+			renderPipeline.render(delta);
+		} else {
+			renderer.render(scene, activeCamera);
+		}
+
+		// HTML labels follow their 3D anchors — render the DOM overlay against the active camera.
+		if (labelLayer) labelLayer.render(scene, activeCamera);
+
+		// The gizmo draws as an overlay in a corner viewport with its own clear; render it last so it
+		// sits on top of the scene.
+		if (gizmo) gizmo.render(renderer);
 	};
 
 	const dispose = () => {
@@ -343,6 +684,11 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 		new HDRLoader().load(
 			config.environment.hdrPath || '/baseHDR.hdr',
 			function (envMap) {
+				if (!envMap?.image) {
+					getLogger().warn('HDR loaded without image data; skipping environment map.');
+					config.events.onReady?.();
+					return;
+				}
 				envMap.mapping = THREE.EquirectangularReflectionMapping;
 				scene.environment = envMap;
 				if (config.environment.showEnvironment) {
@@ -361,47 +707,55 @@ function setupEnvironment(scene: THREE.Scene, config: Required<ThreeInitializerO
 	}
 }
 
-function setupLighting(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
+/**
+ * Set up scene lighting. Returns the shadow-casting sun, if any, so the caller can refit its shadow
+ * frustum to the scene whenever geometry changes (see `fitShadowToContent`). Returns null when
+ * sunlight is disabled or shadows are off — there is then nothing to refit.
+ */
+function setupLighting(
+	scene: THREE.Scene,
+	config: Required<ThreeInitializerOptions>
+): THREE.DirectionalLight | null {
 	const ambientLight = new THREE.AmbientLight(
 		config.lighting.ambientLightColor,
 		config.lighting.ambientLightIntensity
 	);
 	scene.add(ambientLight);
 
-	if (config.lighting.enableSunlight) {
-		const sunlight = new THREE.DirectionalLight(
-			config.lighting.sunlightColor ?? 0xffffff,
-			config.lighting.sunlightIntensity
-		);
-		const pos = config.lighting.sunlightPosition;
-		if (pos) {
-			sunlight.position.set(pos.x, pos.y, pos.z);
-		}
+	if (!config.lighting.enableSunlight) return null;
 
-		if (config.render.enableShadows) {
-			sunlight.castShadow = true;
-			const shadowSize = getScaleValue(config.sceneScale, 0.1, 10, 100);
-
-			sunlight.shadow.camera.left = -shadowSize;
-			sunlight.shadow.camera.right = shadowSize;
-			sunlight.shadow.camera.top = shadowSize;
-			sunlight.shadow.camera.bottom = -shadowSize;
-
-			const shadowNear = getScaleValue(config.sceneScale, 0.001, 0.1, 0.5);
-			const shadowFar = getScaleValue(config.sceneScale, 1, 100, 500);
-
-			sunlight.shadow.camera.near = shadowNear;
-			sunlight.shadow.camera.far = shadowFar;
-
-			sunlight.shadow.mapSize.width = config.render.shadowMapSize || 2048;
-			sunlight.shadow.mapSize.height = config.render.shadowMapSize || 2048;
-
-			sunlight.shadow.bias = -0.0001;
-			sunlight.shadow.normalBias = 0.02;
-		}
-
-		scene.add(sunlight);
+	const sunlight = new THREE.DirectionalLight(
+		config.lighting.sunlightColor ?? 0xffffff,
+		config.lighting.sunlightIntensity
+	);
+	const pos = config.lighting.sunlightPosition;
+	if (pos) {
+		sunlight.position.set(pos.x, pos.y, pos.z);
 	}
+
+	if (!config.render.enableShadows) {
+		scene.add(sunlight);
+		return null;
+	}
+
+	sunlight.castShadow = true;
+
+	// The frustum bounds (left/right/top/bottom/near/far) are not set here — they are fitted to the
+	// scene content by fitShadowToContent, called at init and on every geometry change. Sizing them
+	// to the model instead of a fixed constant is the dominant lever on shadow crispness.
+	sunlight.shadow.mapSize.width = config.render.shadowMapSize || 2048;
+	sunlight.shadow.mapSize.height = config.render.shadowMapSize || 2048;
+
+	sunlight.shadow.bias = -0.0001;
+	sunlight.shadow.normalBias = 0.02;
+	// Soften VSM edges; cheap and only meaningful once the frustum is tight (see fitShadowToContent).
+	sunlight.shadow.radius = 4;
+
+	scene.add(sunlight);
+	// A DirectionalLight aims at its target's world position; the target must be in the scene graph
+	// for its matrix to update. fitShadowToContent moves this target to the content centre.
+	scene.add(sunlight.target);
+	return sunlight;
 }
 
 function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>) {
@@ -423,8 +777,11 @@ function addFloor(scene: THREE.Scene, config: Required<ThreeInitializerOptions>)
 	const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 	floor.userData.id = 'floor';
 	floor.name = 'floor';
-	floor.rotation.x = -Math.PI / 2;
-	floor.position.y = 0;
+	// PlaneGeometry lies in XY with a +Z normal — already the ground for a Z-up scene. Orient its
+	// normal to the scene up axis so the floor is the ground plane in any up convention.
+	const up = (config.environment?.sceneUp || defaultUp).clone().normalize();
+	floor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), up);
+	floor.position.set(0, 0, 0);
 
 	if (config.floor.receiveShadow && config.render.enableShadows) {
 		floor.receiveShadow = true;
@@ -500,6 +857,7 @@ function setupRenderer(
 function setupEventHandlers(
 	canvas: HTMLCanvasElement,
 	scene: THREE.Scene,
+	getActiveCamera: () => THREE.Camera,
 	camera: THREE.PerspectiveCamera,
 	controls: OrbitControls,
 	config: Required<ThreeInitializerOptions>
@@ -527,13 +885,9 @@ function setupEventHandlers(
 	};
 
 	const fitToView = () => {
-		const box = new THREE.Box3();
-
-		scene.traverse((object) => {
-			if (object.visible && object.userData.id !== 'floor' && object instanceof THREE.Mesh) {
-				box.expandByObject(object);
-			}
-		});
+		// Frame the scene's renderable content; viewer aids (grid/floor/labels/measure) are excluded so
+		// the camera-tracking grid plane can't dominate the bounds and blow up the fit distance.
+		const box = computeContentBounds(scene);
 
 		if (box.isEmpty()) {
 			getLogger().warn('No objects to fit to view');
@@ -549,7 +903,12 @@ function setupEventHandlers(
 
 		distance *= 1.5;
 
-		const direction = camera.position.clone().sub(controls.target).normalize();
+		// View direction from the current camera→target. If those coincide (camera sitting on its
+		// target, e.g. after a degenerate fit), fall back to a sensible 3/4 iso so we never produce a
+		// zero/NaN direction that collapses the view.
+		const direction = camera.position.clone().sub(controls.target);
+		if (direction.lengthSq() < 1e-12) direction.set(0.8, 1, 1.2);
+		direction.normalize();
 		camera.position.copy(center.clone().add(direction.multiplyScalar(distance)));
 
 		controls.target.copy(center);
@@ -565,12 +924,50 @@ function setupEventHandlers(
 
 	const clearSelection = () => {
 		selectedObjects.forEach((obj) => {
-			if (obj instanceof THREE.Mesh && originalMaterials.has(obj)) {
-				obj.material = originalMaterials.get(obj)!;
+			const restorable = obj as THREE.Object3D & {
+				material?: THREE.Material | THREE.Material[];
+			};
+			if (originalMaterials.has(obj)) {
+				const original = originalMaterials.get(obj)!;
+				// Dispose the clone we swapped in before restoring the original.
+				const clone = restorable.material;
+				if (clone instanceof THREE.Material) clone.dispose();
+				else if (Array.isArray(clone)) clone.forEach((m) => m.dispose());
+				restorable.material = original;
 				originalMaterials.delete(obj);
 			}
 		});
 		selectedObjects.clear();
+	};
+
+	// Highlight a selected object by cloning its material and recoloring. Meshes get an `emissive`
+	// tint (so the surface keeps its base color); lines and points have no emissive channel, so we
+	// recolor `color` directly. Returns true if a highlight was applied (a material was found).
+	const applyHighlight = (object: THREE.Object3D): boolean => {
+		const target = object as THREE.Object3D & { material?: THREE.Material | THREE.Material[] };
+		if (!(target.material instanceof THREE.Material)) return false;
+
+		originalMaterials.set(object, target.material);
+		const clone = target.material.clone();
+
+		if (object instanceof THREE.Mesh && 'emissive' in clone) {
+			(clone as THREE.MeshStandardMaterial).emissive = selectionColorObj.clone();
+		} else if ('color' in clone) {
+			(clone as THREE.LineBasicMaterial).color = selectionColorObj.clone();
+		}
+
+		target.material = clone;
+		return true;
+	};
+
+	// Picking lines and points needs a ray-to-geometry tolerance, scaled to the scene so it holds at
+	// any zoom. Plain THREE.Points use Raycaster.params.Points.threshold; fat Line2 uses its own
+	// material linewidth, so only Points needs this. (THREE.Line would use params.Line.threshold, but
+	// curves here are Line2.) Recomputed per pick from the current scene bounds.
+	const updatePickThresholds = () => {
+		const box = computeContentBounds(scene);
+		const diagonal = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
+		raycaster.params.Points.threshold = diagonal * 0.01;
 	};
 
 	const handleMouseDown = (event: MouseEvent) => {
@@ -588,7 +985,8 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-		raycaster.setFromCamera(mouse, camera);
+		updatePickThresholds();
+		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)
 			.filter((i) => isFullyVisible(i.object));
@@ -600,17 +998,9 @@ function setupEventHandlers(
 				clearSelection();
 				selectedObjects.add(clickedObject);
 
-				// Clone material so we don't affect other meshes
-				if (
-					clickedObject instanceof THREE.Mesh &&
-					clickedObject.material instanceof THREE.Material
-				) {
-					originalMaterials.set(clickedObject, clickedObject.material);
-
-					const clonedMaterial = clickedObject.material.clone();
-					(clonedMaterial as any).emissive = selectionColorObj.clone();
-					clickedObject.material = clonedMaterial;
-				}
+				// Clone material (so siblings sharing it are untouched) and recolor to highlight.
+				// Handles meshes, fat lines, and points alike.
+				applyHighlight(clickedObject);
 
 				config.events?.onObjectSelected?.(clickedObject);
 
@@ -629,7 +1019,8 @@ function setupEventHandlers(
 		mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 		mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-		raycaster.setFromCamera(mouse, camera);
+		updatePickThresholds();
+		raycaster.setFromCamera(mouse, getActiveCamera());
 		const intersects = raycaster
 			.intersectObjects(scene.children, true)
 			.filter((i) => isFullyVisible(i.object));

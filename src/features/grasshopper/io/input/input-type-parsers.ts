@@ -91,8 +91,10 @@ const booleanTransformer: ValueTransformer<boolean> = (value) => {
 
 const textTransformer: ValueTransformer<string> = (value) => {
 	if (typeof value === 'string') {
-		if (value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
-		if (value.startsWith('"')) return value.slice(1, -1);
+		if (value.length >= 2 && value.startsWith('"') && value.endsWith('"'))
+			return value.slice(1, -1);
+		// Unbalanced leading quote: strip only the quote, not the last character.
+		if (value.startsWith('"')) return value.slice(1);
 		return value;
 	}
 	return null;
