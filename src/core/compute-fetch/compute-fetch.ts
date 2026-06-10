@@ -191,9 +191,9 @@ function buildHeaders(requestId: string, config: ComputeConfig): HeadersInit {
 		...(config.apiKey && { RhinoComputeKey: config.apiKey })
 	};
 
-	if (!config.apiKey && !isLocalhost(config.serverUrl)) {
+	if (!config.apiKey && !config.authToken && !isLocalhost(config.serverUrl)) {
 		getLogger().warn(
-			`⚠️ [Rhino Compute] Request [${requestId}] targets remote server (${config.serverUrl}) but no API key is configured. Requests may fail or be rate-limited.`
+			`⚠️ [Rhino Compute] Request [${requestId}] targets remote server (${config.serverUrl}) but no API key or auth token is configured. Requests may fail or be rate-limited.`
 		);
 	}
 

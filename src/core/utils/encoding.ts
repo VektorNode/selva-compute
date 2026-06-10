@@ -10,7 +10,11 @@ import { getLogger } from './logger';
  * @returns Base64 encoded string
  */
 export function encodeStringToBase64(str: string): string {
-	return Buffer.from(str, 'utf-8').toString('base64');
+	if (typeof (globalThis as any).Buffer === 'function') {
+		return (globalThis as any).Buffer.from(str, 'utf-8').toString('base64');
+	}
+	// Browser/worker fallback: UTF-8 encode, then reuse the byte-array encoder.
+	return base64ByteArray(new TextEncoder().encode(str));
 }
 
 /**
@@ -22,7 +26,11 @@ export function encodeStringToBase64(str: string): string {
  * @returns Decoded UTF-8 string
  */
 export function decodeBase64ToString(base64Str: string): string {
-	return Buffer.from(base64Str, 'base64').toString('utf-8');
+	if (typeof (globalThis as any).Buffer === 'function') {
+		return (globalThis as any).Buffer.from(base64Str, 'base64').toString('utf-8');
+	}
+	// Browser/worker fallback: decode to bytes, then UTF-8 decode.
+	return new TextDecoder('utf-8').decode(decodeBase64ToBinary(base64Str));
 }
 
 /**

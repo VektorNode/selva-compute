@@ -101,6 +101,15 @@ describe('getValues — aggregation and keys', () => {
 		expect(getValues(res).values.nums).toEqual([1, 2, 3]);
 	});
 
+	it('wraps (not merges) when the first item itself parses to an array', () => {
+		// Regression: Array.isArray-based aggregation pushed the second item INTO
+		// the first item's parsed array — [1,2,3,[4]] instead of [[1,2,3],[4]].
+		const res = response(
+			param('lists', [item('System.String', '[1,2,3]'), item('System.String', '[4]')])
+		);
+		expect(getValues(res).values.lists).toEqual([[1, 2, 3], [4]]);
+	});
+
 	it('keeps a single item as a scalar (not a 1-element array)', () => {
 		const res = response(param('n', [item('System.Int32', '7')]));
 		expect(getValues(res).values.n).toBe(7);

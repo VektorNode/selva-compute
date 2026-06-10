@@ -254,7 +254,10 @@ function nudgeOffPole(dir: THREE.Vector3, up: THREE.Vector3): THREE.Vector3 {
 			: new THREE.Vector3(0, 0, 1);
 	const inPlane = new THREE.Vector3().crossVectors(u, seed).normalize();
 	const tilt = (0.5 * Math.PI) / 180; // ~0.5°
-	return d.multiplyScalar(Math.cos(tilt)).add(inPlane.multiplyScalar(Math.sin(tilt))).normalize();
+	return d
+		.multiplyScalar(Math.cos(tilt))
+		.add(inPlane.multiplyScalar(Math.sin(tilt)))
+		.normalize();
 }
 
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);

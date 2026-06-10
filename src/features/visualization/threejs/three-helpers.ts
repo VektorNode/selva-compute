@@ -141,9 +141,17 @@ export function parseColor(colorString: string): THREE.Color {
 	}
 }
 
-export function applyOffset(meshes: THREE.Object3D[], offsetY: number): void {
+/**
+ * Shift objects along one world axis. Defaults to `z` — the up axis of the unified Z-up scene
+ * frame (see `../coordinate-transform.ts`), so grounding subtracts the content's lowest z.
+ */
+export function applyOffset(
+	meshes: THREE.Object3D[],
+	offset: number,
+	axis: 'x' | 'y' | 'z' = 'z'
+): void {
 	meshes.forEach((mesh) => {
-		mesh.position.y -= offsetY;
+		mesh.position[axis] -= offset;
 	});
 }
 

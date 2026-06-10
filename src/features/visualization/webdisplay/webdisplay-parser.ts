@@ -195,14 +195,14 @@ function safeParse(s: string): DisplayBatch | undefined {
 }
 
 /**
- * Applies vertical offset to position objects on the Z=0 plane.
+ * Applies vertical offset to position objects on the Z=0 plane (the ground of the unified
+ * Z-up scene frame — see ../coordinate-transform.ts).
  */
 function applyGroundOffset(meshes: THREE.Object3D[]): void {
 	if (meshes.length === 0) return;
 
 	const combinedBoundingBox = computeCombinedBoundingBox(meshes);
-	const offsetY = combinedBoundingBox.min.y;
-	applyOffset(meshes, offsetY);
+	applyOffset(meshes, combinedBoundingBox.min.z, 'z');
 }
 
 /**

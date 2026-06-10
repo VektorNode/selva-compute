@@ -269,6 +269,17 @@ describe('TreeBuilder.getTreeValue — TreeBuilder[] form', () => {
 		const trees = [new TreeBuilder('Empty')];
 		expect(TreeBuilder.getTreeValue(trees, 'Empty')).toBeNull();
 	});
+
+	it('keeps an empty string a string (not numeric 0)', () => {
+		// Regression: Number('') === 0, so !isNaN(Number(data)) turned '' into 0.
+		const trees = [new TreeBuilder('S').appendFlat('')];
+		expect(TreeBuilder.getTreeValue(trees, 'S')).toBe('');
+	});
+
+	it('keeps a whitespace-only string a string', () => {
+		const trees = [new TreeBuilder('S').appendFlat('  ')];
+		expect(TreeBuilder.getTreeValue(trees, 'S')).toBe('  ');
+	});
 });
 
 describe('TreeBuilder.getTreeValue — DataTree[] form (API responses)', () => {

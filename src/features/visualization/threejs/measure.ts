@@ -237,11 +237,7 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 		scene.add(line);
 
 		const mid = a.clone().add(b).multiplyScalar(0.5);
-		const delta = new THREE.Vector3(
-			Math.abs(b.x - a.x),
-			Math.abs(b.y - a.y),
-			Math.abs(b.z - a.z)
-		);
+		const delta = new THREE.Vector3(Math.abs(b.x - a.x), Math.abs(b.y - a.y), Math.abs(b.z - a.z));
 		label = labelLayer.addLabel(format(a.distanceTo(b), delta), mid, options.labelClassName);
 	};
 

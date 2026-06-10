@@ -511,8 +511,9 @@ export class TreeBuilder {
 				return data;
 			}
 		}
-		// Try to parse as number
-		if (!isNaN(Number(data))) {
+		// Try to parse as number. Guard against ''/whitespace: Number('') === 0,
+		// which would silently turn empty strings into numeric zero.
+		if (data.trim() !== '' && !isNaN(Number(data))) {
 			return Number(data);
 		}
 		// Try to parse as boolean
