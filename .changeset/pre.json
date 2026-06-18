@@ -5,6 +5,6 @@
     "@selvajs/compute": "2.2.0"
   },
   "changesets": [
-    "slva-uint16-indices"
+    "envelope-source-component-id"
   ]
 }
