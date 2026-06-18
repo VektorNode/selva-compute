@@ -5,9 +5,10 @@
  * VektorNode/compute.rhino3d@Compute8) AND the failure-mode behavior, which was
  * previously the least-covered seam:
  *
- *   GET /healthcheck    → 200 (proxy MapHealthChecks). Client only reads .ok.
- *   GET /activechildren → plain-text integer (proxy writes ActiveComputeCount).
- *   GET /version        → { rhino, compute, git_sha } lowercase (proxied to a child).
+ *   GET /                    -> 200 "compute.rhino3d running" (proxy liveness root).
+ *   GET /activechildren      -> plain-text integer (proxy writes ActiveComputeCount).
+ *   GET /version             -> { rhino, compute, git_sha } lowercase (proxied to a child).
+ *   GET /plugins/*\/installed -> { name: version } map of non-core plugins.
  *
  * The client must DEGRADE GRACEFULLY on every failure (return null/false, never
  * throw) so a flaky monitor never crashes the caller — these tests pin exactly
@@ -46,15 +47,15 @@ function route(handlers: Record<string, () => Response>) {
 }
 
 describe('isServerOnline', () => {
-	it('is true when /healthcheck is 200', async () => {
-		route({ '/healthcheck': () => res('Healthy') });
+	it('is true when GET / is 200', async () => {
+		fetchMock.mockResolvedValue(res('compute.rhino3d running'));
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.isServerOnline()).resolves.toBe(true);
 		await stats.dispose();
 	});
 
-	it('is false when /healthcheck is non-2xx', async () => {
-		route({ '/healthcheck': () => res('', { ok: false, status: 503 }) });
+	it('is false when GET / is non-2xx', async () => {
+		fetchMock.mockResolvedValue(res('', { ok: false, status: 503 }));
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.isServerOnline()).resolves.toBe(false);
 		await stats.dispose();
@@ -67,11 +68,54 @@ describe('isServerOnline', () => {
 		await stats.dispose();
 	});
 
-	it('hits the /healthcheck endpoint (not a bare URL)', async () => {
-		route({ '/healthcheck': () => res('Healthy') });
+	it('probes the proxy root `/` (its real liveness route, not /healthcheck)', async () => {
+		fetchMock.mockResolvedValue(res('compute.rhino3d running'));
 		const stats = new ComputeServerStats(SERVER);
 		await stats.isServerOnline();
-		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/healthcheck`);
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/`);
+		await stats.dispose();
+	});
+});
+
+describe('getInstalledPlugins', () => {
+	it('returns the gh inventory by default', async () => {
+		route({
+			'/plugins/gh/installed': () => res(JSON.stringify({ Selva: '1.4.0', Pufferfish: '3.0' }))
+		});
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getInstalledPlugins()).resolves.toEqual({
+			Selva: '1.4.0',
+			Pufferfish: '3.0'
+		});
+		await stats.dispose();
+	});
+
+	it('hits /plugins/rhino/installed when kind is "rhino"', async () => {
+		route({ '/plugins/rhino/installed': () => res(JSON.stringify({ Bongo: '8.0' })) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getInstalledPlugins('rhino')).resolves.toEqual({ Bongo: '8.0' });
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/plugins/rhino/installed`);
+		await stats.dispose();
+	});
+
+	it('returns null on a non-2xx response', async () => {
+		route({ '/plugins/gh/installed': () => res('', { ok: false, status: 401 }) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getInstalledPlugins()).resolves.toBeNull();
+		await stats.dispose();
+	});
+
+	it('returns null on a non-JSON body', async () => {
+		route({ '/plugins/gh/installed': () => res('not json') });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getInstalledPlugins()).resolves.toBeNull();
+		await stats.dispose();
+	});
+
+	it('returns null (not throwing) when the network rejects', async () => {
+		fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getInstalledPlugins()).resolves.toBeNull();
 		await stats.dispose();
 	});
 });
@@ -88,6 +132,14 @@ describe('getActiveChildren', () => {
 		route({ '/activechildren': () => res('  5\n') });
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.getActiveChildren()).resolves.toBe(5);
+		await stats.dispose();
+	});
+
+	it('appends ?initialize=false for a passive read (no spawn)', async () => {
+		route({ '/activechildren?initialize=false': () => res('2') });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getActiveChildren({ initialize: false })).resolves.toBe(2);
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/activechildren?initialize=false`);
 		await stats.dispose();
 	});
 
@@ -182,7 +234,7 @@ describe('API key header', () => {
 
 describe('getServerStats aggregation', () => {
 	it('returns only { isOnline: false } when offline (no extra round-trips)', async () => {
-		route({ '/healthcheck': () => res('', { ok: false, status: 503 }) });
+		route({ '/': () => res('', { ok: false, status: 503 }) });
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.getServerStats()).resolves.toEqual({ isOnline: false });
 		await stats.dispose();
@@ -190,9 +242,10 @@ describe('getServerStats aggregation', () => {
 
 	it('aggregates version + activeChildren when online', async () => {
 		route({
-			'/healthcheck': () => res('Healthy'),
 			'/version': () => res(JSON.stringify({ rhino: '8', compute: '1', git_sha: null })),
-			'/activechildren': () => res('2')
+			// getServerStats reads the child count passively (no spawn).
+			'/activechildren?initialize=false': () => res('2'),
+			'/': () => res('compute.rhino3d running')
 		});
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.getServerStats()).resolves.toEqual({
@@ -248,6 +301,157 @@ describe('purgeCache', () => {
 		fetchMock.mockRejectedValue(new TypeError('fetch failed'));
 		const stats = new ComputeServerStats(SERVER);
 		await expect(stats.purgeCache()).resolves.toBeNull();
+		await stats.dispose();
+	});
+});
+
+describe('purgeAllChildren', () => {
+	it('reads the passive child count and fires 2× purges', async () => {
+		let purges = 0;
+		route({
+			'/activechildren?initialize=false': () => res('3'),
+			'/cache/purge': () => {
+				purges++;
+				return res(JSON.stringify({ purged: 5 }));
+			}
+		});
+		const stats = new ComputeServerStats(SERVER);
+		const result = await stats.purgeAllChildren();
+		expect(result).toEqual({ totalPurged: 30, calls: 6, children: 3, confident: false });
+		expect(purges).toBe(6); // 2 × 3
+		// The count probe must be the non-spawning variant.
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/activechildren?initialize=false`);
+		await stats.dispose();
+	});
+
+	it('is confident at a single-child pool (one purge is exact)', async () => {
+		route({
+			'/activechildren?initialize=false': () => res('1'),
+			'/cache/purge': () => res(JSON.stringify({ purged: 7 }))
+		});
+		const stats = new ComputeServerStats(SERVER);
+		const result = await stats.purgeAllChildren();
+		expect(result).toEqual({ totalPurged: 14, calls: 2, children: 1, confident: true });
+		await stats.dispose();
+	});
+
+	it('short-circuits with zero work when no children are live', async () => {
+		let purges = 0;
+		route({
+			'/activechildren?initialize=false': () => res('0'),
+			'/cache/purge': () => {
+				purges++;
+				return res(JSON.stringify({ purged: 1 }));
+			}
+		});
+		const stats = new ComputeServerStats(SERVER);
+		const result = await stats.purgeAllChildren();
+		expect(result).toEqual({ totalPurged: 0, calls: 0, children: 0, confident: true });
+		expect(purges).toBe(0);
+		await stats.dispose();
+	});
+
+	it('returns null when the child count is unreadable', async () => {
+		route({ '/activechildren?initialize=false': () => res('', { ok: false, status: 503 }) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.purgeAllChildren()).resolves.toBeNull();
+		await stats.dispose();
+	});
+
+	it('tolerates a failed purge mid-loop (skips it, keeps going)', async () => {
+		let n = 0;
+		route({
+			'/activechildren?initialize=false': () => res('2'),
+			'/cache/purge': () => {
+				n++;
+				// Second of the four calls fails; the rest return 4 each.
+				return n === 2 ? res('', { ok: false, status: 500 }) : res(JSON.stringify({ purged: 4 }));
+			}
+		});
+		const stats = new ComputeServerStats(SERVER);
+		const result = await stats.purgeAllChildren();
+		// 4 calls, one failed -> 3 × 4 purged.
+		expect(result).toEqual({ totalPurged: 12, calls: 4, children: 2, confident: false });
+		await stats.dispose();
+	});
+});
+
+describe('getServerTime', () => {
+	it('parses the JSON-quoted ISO timestamp into a Date', async () => {
+		route({ '/servertime': () => res('"2026-06-18T08:30:00Z"') });
+		const stats = new ComputeServerStats(SERVER);
+		const t = await stats.getServerTime();
+		expect(t?.toISOString()).toBe('2026-06-18T08:30:00.000Z');
+		await stats.dispose();
+	});
+
+	it('returns null on an unparseable body', async () => {
+		route({ '/servertime': () => res('"not-a-date"') });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getServerTime()).resolves.toBeNull();
+		await stats.dispose();
+	});
+});
+
+describe('getIdleSpan', () => {
+	it('parses the numeric idle seconds', async () => {
+		route({ '/idlespan': () => res('42.5') });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getIdleSpan()).resolves.toBe(42.5);
+		await stats.dispose();
+	});
+
+	it('returns null on a non-2xx response', async () => {
+		route({ '/idlespan': () => res('', { ok: false, status: 500 }) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.getIdleSpan()).resolves.toBeNull();
+		await stats.dispose();
+	});
+});
+
+describe('child-lifecycle control', () => {
+	it('launchChildren POSTs and returns { spawned, active }', async () => {
+		route({ '/launch-children': () => res(JSON.stringify({ spawned: [6001, 6002], active: 2 })) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.launchChildren()).resolves.toEqual({ spawned: [6001, 6002], active: 2 });
+		expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
+		await stats.dispose();
+	});
+
+	it('launchChild appends ?port=N when a port is given', async () => {
+		route({ '/launch-child?port=6003': () => res(JSON.stringify({ spawned: [6003] })) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.launchChild(6003)).resolves.toEqual({ spawned: [6003] });
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/launch-child?port=6003`);
+		await stats.dispose();
+	});
+
+	it('shutdownChildren targets all children when no port is given', async () => {
+		route({ '/shutdown-children': () => res(JSON.stringify({ shutdown: 3, active: 0 })) });
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.shutdownChildren()).resolves.toEqual({ shutdown: 3, active: 0 });
+		expect(fetchMock.mock.calls[0][0]).toBe(`${SERVER}/shutdown-children`);
+		await stats.dispose();
+	});
+
+	it('recycleChildren returns { shutdown, spawned, active }', async () => {
+		route({
+			'/recycle-children': () =>
+				res(JSON.stringify({ shutdown: 2, spawned: [6001, 6002], active: 2 }))
+		});
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.recycleChildren()).resolves.toEqual({
+			shutdown: 2,
+			spawned: [6001, 6002],
+			active: 2
+		});
+		await stats.dispose();
+	});
+
+	it('returns null (not throwing) when a control call rejects', async () => {
+		fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+		const stats = new ComputeServerStats(SERVER);
+		await expect(stats.recycleChildren()).resolves.toBeNull();
 		await stats.dispose();
 	});
 });

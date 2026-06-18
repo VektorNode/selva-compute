@@ -57,9 +57,10 @@ export interface ComputeConfig {
 	 *
 	 * This should point at the `rhino.compute` front (the reverse proxy), not a
 	 * bare `compute.geometry` child process. `ComputeServerStats` relies on the
-	 * proxy-only endpoints `/healthcheck` and `/activechildren`; targeting a
-	 * bare `compute.geometry` would make `isServerOnline()` 404 even though
-	 * `/grasshopper` would still solve.
+	 * proxy liveness root `/` and proxy-only endpoints like `/activechildren`,
+	 * `/idlespan`, and the child-lifecycle controls; targeting a bare
+	 * `compute.geometry` would make those 404 even though `/grasshopper` would
+	 * still solve.
 	 */
 	serverUrl: string;
 	/** Optional API key for authenticating with the server (RhinoComputeKey) */

@@ -63,8 +63,9 @@ export default class GrasshopperClient {
 	/**
 	 * Creates and initializes a GrasshopperClient with server validation.
 	 *
-	 * The pre-flight `/healthcheck` probe is a single-sample boolean gate that
-	 * reads a cold or briefly-busy-but-up server as offline. To avoid failing
+	 * The pre-flight liveness probe (a GET on the proxy root `/`) is a
+	 * single-sample boolean gate that reads a cold or briefly-busy-but-up server
+	 * as offline. To avoid failing
 	 * construction on that transient class, the probe is retried with a short
 	 * exponential backoff before giving up. Each probe is also bounded by a
 	 * timeout so a hung connection can't stall construction.
@@ -76,13 +77,13 @@ export default class GrasshopperClient {
 	static async create(config: GrasshopperComputeConfig): Promise<GrasshopperClient> {
 		const client = new GrasshopperClient(config);
 
-		// A single healthcheck miss isn't authoritative — a cold/busy-but-up
+		// A single liveness miss isn't authoritative — a cold/busy-but-up
 		// server flickers non-200. Retry a few times with backoff before failing.
 		const attempts = Math.max(1, (config.retry?.attempts ?? 2) + 1);
 		const baseDelayMs = config.retry?.baseDelayMs ?? 250;
 		const maxDelayMs = config.retry?.maxDelayMs ?? 1000;
 
-		// The healthcheck is a trivial GET — always bound it, independent of the
+		// The liveness probe is a trivial GET — always bound it, independent of the
 		// solve timeout (which may be 0 to allow arbitrarily long solves).
 		for (let attempt = 0; attempt < attempts; attempt++) {
 			if (await client.serverStats.isServerOnline()) {
