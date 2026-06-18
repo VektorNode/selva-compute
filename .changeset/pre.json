@@ -1,0 +1,10 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "@selvajs/compute": "2.2.0"
+  },
+  "changesets": [
+    "slva-uint16-indices"
+  ]
+}

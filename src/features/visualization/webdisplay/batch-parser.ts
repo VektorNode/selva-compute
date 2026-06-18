@@ -352,7 +352,7 @@ function createMaterial(matData: SerializableMaterial): THREE.MeshPhysicalMateri
 function createMergedMesh(
 	group: MaterialGroup,
 	allVertices: Float32Array,
-	allIndices: Uint32Array,
+	allIndices: Uint16Array | Uint32Array,
 	materials: THREE.Material[]
 ): THREE.Mesh {
 	let totalVertexCount = 0;
@@ -427,7 +427,7 @@ function createMergedMesh(
 function createIndividualMeshes(
 	group: MaterialGroup,
 	allVertices: Float32Array,
-	allIndices: Uint32Array,
+	allIndices: Uint16Array | Uint32Array,
 	materials: THREE.Material[]
 ): THREE.Mesh[] {
 	const meshes: THREE.Mesh[] = [];
