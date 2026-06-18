@@ -5,8 +5,10 @@
  * fetchRhinoCompute → HTTP, and client.getIO() → fetchParsedDefinitionIO → the
  * input-type parser pipeline — without a live Compute server.
  *
- * fetch is routed by URL so each leg (healthcheck / grasshopper / io) is stubbed
- * independently, exercising the real URL building.
+ * fetch is routed by URL so each leg (liveness `/` / grasshopper / io) is stubbed
+ * independently, exercising the real URL building. The liveness probe hits the
+ * proxy root `/`, not `/healthcheck` (which the rhino.compute proxy doesn't
+ * expose) — see ComputeServerStats.isServerOnline.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import GrasshopperClient from '@/features/grasshopper/client/grasshopper-client';
@@ -32,8 +34,8 @@ function route(handlers: Record<string, () => Response>) {
 const onlineServer = () => createMockResponse({ status: 'healthy' });
 
 describe('GrasshopperClient.create', () => {
-	it('resolves when the server healthcheck is OK', async () => {
-		route({ '/healthcheck': onlineServer });
+	it('resolves when the server liveness probe is OK', async () => {
+		route({ '/': onlineServer });
 		const client = await GrasshopperClient.create({ serverUrl: SERVER });
 		expect(client).toBeInstanceOf(GrasshopperClient);
 		await client.dispose();
@@ -41,7 +43,7 @@ describe('GrasshopperClient.create', () => {
 
 	it('throws NETWORK_ERROR when the server is offline', async () => {
 		route({
-			'/healthcheck': () => createMockResponse({}, { ok: false, status: 503, statusText: 'down' })
+			'/': () => createMockResponse({}, { ok: false, status: 503, statusText: 'down' })
 		});
 		await expect(
 			GrasshopperClient.create({ serverUrl: SERVER, retry: { attempts: 0 } })
@@ -50,11 +52,11 @@ describe('GrasshopperClient.create', () => {
 		});
 	});
 
-	it('retries a flaky healthcheck and succeeds once it goes 2xx', async () => {
+	it('retries a flaky liveness probe and succeeds once it goes 2xx', async () => {
 		// Cold/busy-but-up server: first probe flickers 503, then recovers.
 		let calls = 0;
 		fetchMock.mockImplementation((url: string) => {
-			if (url.endsWith('/healthcheck')) {
+			if (url.endsWith('/')) {
 				calls += 1;
 				return Promise.resolve(
 					calls === 1
@@ -83,7 +85,7 @@ describe('GrasshopperClient.solve (e2e through transport)', () => {
 			warnings: []
 		};
 		route({
-			'/healthcheck': onlineServer,
+			'/': onlineServer,
 			'/grasshopper': () => createMockResponse(computeResponse)
 		});
 
@@ -104,7 +106,7 @@ describe('GrasshopperClient.solve (e2e through transport)', () => {
 	});
 
 	it('rejects an empty definition with INVALID_INPUT before any network call', async () => {
-		route({ '/healthcheck': onlineServer });
+		route({ '/': onlineServer });
 		const client = await GrasshopperClient.create({ serverUrl: SERVER });
 
 		await expect(client.solve('   ', [])).rejects.toMatchObject({ code: 'INVALID_INPUT' });
@@ -121,7 +123,7 @@ describe('GrasshopperClient.solve (e2e through transport)', () => {
 			warnings: []
 		};
 		route({
-			'/healthcheck': onlineServer,
+			'/': onlineServer,
 			'/grasshopper': () =>
 				createMockResponse(null, {
 					ok: false,
@@ -165,7 +167,7 @@ describe('GrasshopperClient.getIO (e2e through transport + parser pipeline)', ()
 			outputs: []
 		};
 		route({
-			'/healthcheck': onlineServer,
+			'/': onlineServer,
 			'/io': () => createMockResponse(ioResponse)
 		});
 
