@@ -9,10 +9,19 @@ import type { MaterialGroup, SerializableMaterial } from './types';
 
 /** "SLVA" little-endian. */
 export const BINARY_MESH_MAGIC = 0x41564c53;
-/** Bumped on any wire-layout change. */
-export const BINARY_MESH_VERSION = 1;
+/** Current writer version. v2 added the uint16-index flag (FLAG_UINT16_INDICES). */
+export const BINARY_MESH_VERSION = 2;
+/**
+ * Oldest wire version this parser still decodes. v1 is layout-identical to v2 except it predates
+ * the uint16-index flag — v1 always used uint32 indices, i.e. the flag is implicitly clear — so the
+ * v2 flag-driven read path handles v1 blobs unchanged. Accepting it keeps persisted/cached v1 blobs
+ * (saved `.gh` files, cached compute results) decodable after upgrade.
+ */
+export const MIN_SUPPORTED_VERSION = 1;
 /** Bit 0 of the geometry flags word: 0 = int16 quantized, 1 = float32 raw. */
 export const FLAG_FLOAT32 = 0x1;
+/** Bit 1 of the geometry flags word: 0 = uint32 indices, 1 = uint16 indices. */
+export const FLAG_UINT16_INDICES = 0x2;
 
 const HEADER_PREAMBLE_BYTES = 4 /* magic */ + 4 /* version */ + 4; /* metadataLen */
 const GEOMETRY_HEADER_BYTES =
@@ -46,7 +55,7 @@ export interface ParsedBinaryMeshBatch {
 	metadata: BinaryMeshMetadata;
 	flags: number;
 	vertices: Int16Array | Float32Array;
-	indices: Uint32Array;
+	indices: Uint16Array | Uint32Array;
 	origin: [number, number, number];
 	scale: [number, number, number];
 }
@@ -64,13 +73,14 @@ export interface ParsedBinaryMeshBatch {
  *   [4]  version      = uint32 (currently 1)
  *   [4]  metadataLen  = uint32 byte length of UTF-8 metadata JSON
  *   [N]  metadata     = UTF-8 JSON (materials, groups, sourceComponentId, ...)
- *   [4]  flags        = uint32 (bit 0: 0 = int16 quantized, 1 = float32 raw)
+ *   [4]  flags        = uint32 (bit 0: 0 = int16 quantized, 1 = float32 raw;
+ *                                bit 1: 0 = uint32 indices, 1 = uint16 indices)
  *   [24] origin       = 3 x float64
  *   [24] scale        = 3 x float64 (step per int16 unit; identity for float32)
  *   [4]  vertexCount  = uint32 number of vertices (positions = vertexCount * 3 components)
  *   [V]  vertices     = int16[vertexCount*3] OR float32[vertexCount*3]
  *   [4]  indexCount   = uint32 number of indices
- *   [I]  indices      = uint32[indexCount]
+ *   [I]  indices      = uint32[indexCount] OR uint16[indexCount]
  * ```
  *
  * For int16 vertices: world position = `origin + (q + 32767) * scale`. This matches Three.js
@@ -110,9 +120,10 @@ export function parseBinaryMeshBatch(
 
 	const version = view.getUint32(offset, true);
 	offset += 4;
-	if (version !== BINARY_MESH_VERSION) {
+	if (version < MIN_SUPPORTED_VERSION || version > BINARY_MESH_VERSION) {
 		throw fail(`Unsupported SLVA version: ${version}`, {
-			expectedVersion: BINARY_MESH_VERSION,
+			minSupportedVersion: MIN_SUPPORTED_VERSION,
+			maxSupportedVersion: BINARY_MESH_VERSION,
 			actualVersion: version
 		});
 	}
@@ -205,17 +216,22 @@ export function parseBinaryMeshBatch(
 	const indexCount = view.getUint32(offset, true);
 	offset += 4;
 
-	const indicesByteLength = indexCount * 4;
+	const useUint16Indices = (flags & FLAG_UINT16_INDICES) !== 0;
+	const bytesPerIndex = useUint16Indices ? 2 : 4;
+	const indicesByteLength = indexCount * bytesPerIndex;
 	if (offset + indicesByteLength > bytes.byteLength) {
 		throw fail('Insufficient data to read indices.', {
 			expectedBytes: indicesByteLength,
 			availableBytes: bytes.byteLength - offset,
 			offset,
-			indexCount
+			indexCount,
+			useUint16Indices
 		});
 	}
 
-	const indicesView = readUint32Indices(bytes.buffer, bytes.byteOffset + offset, indexCount);
+	const indicesView = useUint16Indices
+		? readUint16Indices(bytes.buffer, bytes.byteOffset + offset, indexCount)
+		: readUint32Indices(bytes.buffer, bytes.byteOffset + offset, indexCount);
 
 	return {
 		metadata,
@@ -283,6 +299,20 @@ function readFloat32Vertices(
 	const copy = new Uint8Array(count * 4);
 	copy.set(new Uint8Array(buffer, byteOffset, count * 4));
 	return new Float32Array(copy.buffer);
+}
+
+function readUint16Indices(
+	buffer: ArrayBufferLike,
+	byteOffset: number,
+	count: number
+): Uint16Array {
+	if (count === 0) return new Uint16Array(0);
+	if (byteOffset % 2 === 0) {
+		return new Uint16Array(buffer, byteOffset, count);
+	}
+	const copy = new Uint8Array(count * 2);
+	copy.set(new Uint8Array(buffer, byteOffset, count * 2));
+	return new Uint16Array(copy.buffer);
 }
 
 function readUint32Indices(
