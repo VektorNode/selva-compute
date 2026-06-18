@@ -1,3 +1,4 @@
+import { deflateSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
 import { encodeBatchPayload } from '@tests/helpers/mesh-batch-builder';
@@ -5,6 +6,7 @@ import { encodeBatchPayload } from '@tests/helpers/mesh-batch-builder';
 import {
 	BINARY_MESH_MAGIC,
 	BINARY_MESH_VERSION,
+	COMPRESSED_MESH_MAGIC,
 	FLAG_FLOAT32,
 	FLAG_UINT16_INDICES,
 	parseBinaryMeshBatch
@@ -147,6 +149,47 @@ describe('parseBinaryMeshBatch', () => {
 			expect(parsed.metadata.groups).toHaveLength(1);
 			expect(parsed.metadata.groups[0]!.meshes[0]!.name).toBe('cube');
 			expect(parsed.metadata.sourceComponentId).toBe('gh-component-xyz');
+		});
+	});
+
+	describe('compression (SLVZ container)', () => {
+		// Mirror the C# BlobCompressor: [4] SLVZ magic, [4] uncompressedLen, [N] raw-deflate(SLVA).
+		const wrapSlvz = (slva: Uint8Array): Uint8Array => {
+			const deflated = deflateSync(slva);
+			const out = new Uint8Array(8 + deflated.length);
+			const view = new DataView(out.buffer);
+			view.setUint32(0, COMPRESSED_MESH_MAGIC, true);
+			view.setUint32(4, slva.length, true);
+			out.set(deflated, 8);
+			return out;
+		};
+
+		it('inflates a SLVZ blob and decodes it identically to the raw SLVA blob', () => {
+			const vertices = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
+			const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+
+			const base64 = encodeBatchPayload(vertices, indices, EMPTY_METADATA);
+			const slva = new Uint8Array(Buffer.from(base64, 'base64'));
+
+			const fromRaw = parseBinaryMeshBatch(slva);
+			const fromCompressed = parseBinaryMeshBatch(wrapSlvz(slva));
+
+			expect(Array.from(fromCompressed.indices)).toEqual(Array.from(fromRaw.indices));
+			expect(Array.from(fromCompressed.vertices)).toEqual(Array.from(fromRaw.vertices));
+			expect(fromCompressed.flags).toBe(fromRaw.flags);
+		});
+
+		it('accepts a base64-encoded SLVZ blob', () => {
+			const vertices = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0]);
+			const indices = new Uint32Array([0, 1, 2]);
+			const slva = new Uint8Array(
+				Buffer.from(encodeBatchPayload(vertices, indices, EMPTY_METADATA), 'base64')
+			);
+
+			const slvzBase64 = Buffer.from(wrapSlvz(slva)).toString('base64');
+			const parsed = parseBinaryMeshBatch(slvzBase64);
+
+			expect(Array.from(parsed.indices)).toEqual([0, 1, 2]);
 		});
 	});
 

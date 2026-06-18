@@ -1,3 +1,5 @@
+import { inflateSync } from 'fflate';
+
 import { decodeBase64ToBinary } from '@/core/utils/encoding';
 import { RhinoComputeError, ErrorCodes } from '@/core/errors';
 
@@ -7,8 +9,14 @@ import type { MaterialGroup, SerializableMaterial } from './types';
 // WIRE FORMAT CONSTANTS
 // ============================================================================
 
-/** "SLVA" little-endian. */
+/** "SLVA" little-endian — an uncompressed mesh blob. */
 export const BINARY_MESH_MAGIC = 0x41564c53;
+/**
+ * "SLVZ" little-endian — a gzip (raw DEFLATE) container around a SLVA blob. The plugin applies this
+ * optionally when it shrinks the payload (the wire is otherwise uncompressed). Layout:
+ *   [4] magic = SLVZ, [4] uncompressedLen (uint32), [N] raw-deflate stream of the SLVA blob.
+ */
+export const COMPRESSED_MESH_MAGIC = 0x5a564c53;
 /** Current writer version. v2 added the uint16-index flag (FLAG_UINT16_INDICES). */
 export const BINARY_MESH_VERSION = 2;
 /**
@@ -97,7 +105,7 @@ export interface ParsedBinaryMeshBatch {
 export function parseBinaryMeshBatch(
 	input: ArrayBuffer | Uint8Array | string
 ): ParsedBinaryMeshBatch {
-	const bytes = toUint8Array(input);
+	const bytes = maybeDecompress(toUint8Array(input));
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 	if (bytes.byteLength < HEADER_PREAMBLE_BYTES) {
@@ -255,6 +263,34 @@ function toUint8Array(input: ArrayBuffer | Uint8Array | string): Uint8Array {
 		return input;
 	}
 	return new Uint8Array(input);
+}
+
+/**
+ * If the blob is a SLVZ compressed container, inflate it back to the raw SLVA bytes; otherwise
+ * return the input untouched. Detection is by the leading 4-byte magic, so an uncompressed SLVA
+ * blob (or any pre-v3 payload) flows through unchanged.
+ */
+function maybeDecompress(bytes: Uint8Array): Uint8Array {
+	if (bytes.byteLength < 8) {
+		return bytes;
+	}
+
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	if (view.getUint32(0, true) !== COMPRESSED_MESH_MAGIC) {
+		return bytes;
+	}
+
+	const uncompressedLen = view.getUint32(4, true);
+	const deflated = bytes.subarray(8);
+	try {
+		const out = inflateSync(deflated, { out: new Uint8Array(uncompressedLen) });
+		return out;
+	} catch (error) {
+		throw fail(
+			`Failed to inflate SLVZ blob: ${error instanceof Error ? error.message : String(error)}`,
+			{ uncompressedLen, deflatedBytes: deflated.byteLength }
+		);
+	}
 }
 
 function decodeUtf8(bytes: Uint8Array): string {
