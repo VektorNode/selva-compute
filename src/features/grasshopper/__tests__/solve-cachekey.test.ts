@@ -42,6 +42,20 @@ const loadFailed = () =>
 		{ ok: false, status: 500, statusText: 'Internal Server Error' }
 	);
 
+// Production-mode server: the human message is scrubbed to a generic string, but
+// a stable machine `code` identifies the miss. This is the path that matters once
+// the fork ships the code (debug-off deployments) — the string match above can't
+// catch it.
+const loadFailedScrubbed = () =>
+	createMockResponse(
+		{
+			error: 'Internal Server Error',
+			message: 'An unexpected error occurred. Check server logs for details.',
+			code: 'definition_not_cached'
+		},
+		{ ok: false, status: 500, statusText: 'Internal Server Error' }
+	);
+
 describe('solveGrasshopperDefinitionWithCacheKey', () => {
 	it('captures the server cache key from the response pointer', async () => {
 		fetchMock.mockResolvedValueOnce(okSolve({ pointer: 'md5_DEADBEEF' }));
@@ -95,6 +109,19 @@ describe('solveByCacheKey — fallback on cache miss', () => {
 		expect(body(0).algo).toBeNull();
 		expect(body(1).algo).toBeTruthy();
 		expect(body(1).pointer).toBeNull();
+	});
+
+	it('falls back when the miss is signalled by code, not message (prod server)', async () => {
+		fetchMock
+			.mockResolvedValueOnce(loadFailedScrubbed()) // pointer solve misses, message scrubbed
+			.mockResolvedValueOnce(okSolve({ pointer: 'md5_NEW' })); // full upload succeeds
+
+		const { cacheKey, missed } = await solveByCacheKey([], 'md5_OLD', DEF, config);
+
+		expect(missed).toBe(true);
+		expect(cacheKey).toBe('md5_NEW');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(body(1).algo).toBeTruthy();
 	});
 
 	it('does NOT fall back on an unrelated error', async () => {

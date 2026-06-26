@@ -21,7 +21,15 @@ export const ErrorCodes = {
 	/** Scheduler latest-wins: this call was replaced by a newer one. */
 	SUPERSEDED: 'SUPERSEDED',
 	/** Scheduler / caller-supplied AbortSignal: this call was aborted. */
-	ABORTED: 'ABORTED'
+	ABORTED: 'ABORTED',
+	/**
+	 * A solve referenced a definition by `pointer` (server-side cache key), but the
+	 * server no longer holds that definition (evicted / GC'd / a different child in
+	 * the pool / server restarted). The caller should retry with the full
+	 * definition. Surfaced when the server tags its error body with
+	 * `code: "definition_not_cached"`, so it survives production message-scrubbing.
+	 */
+	DEFINITION_NOT_CACHED: 'DEFINITION_NOT_CACHED'
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
