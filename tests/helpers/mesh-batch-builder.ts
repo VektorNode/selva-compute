@@ -1,7 +1,8 @@
 import {
 	BINARY_MESH_MAGIC,
 	BINARY_MESH_VERSION,
-	FLAG_FLOAT32
+	FLAG_FLOAT32,
+	FLAG_UINT16_INDICES
 } from '@/features/visualization/webdisplay/binary-parser';
 import type {
 	MaterialGroup,
@@ -184,8 +185,10 @@ export function encodeBatchPayload(
 		forceFloat32
 	);
 
+	// Mirror C#: use uint16 indices when the whole batch addresses ≤ 65535 vertices.
+	const useUint16Indices = vertexCount > 0 && vertexCount - 1 <= 65535;
 	const verticesByteLength = vertexCount * 3 * (useFloat32 ? 4 : 2);
-	const indicesByteLength = faces.length * 4;
+	const indicesByteLength = faces.length * (useUint16Indices ? 2 : 4);
 
 	const totalBytes =
 		4 /* magic */ +
@@ -214,7 +217,10 @@ export function encodeBatchPayload(
 	u8.set(metadataBytes, offset);
 	offset += metadataBytes.length;
 
-	view.setUint32(offset, useFloat32 ? FLAG_FLOAT32 : 0, true);
+	let flags = 0;
+	if (useFloat32) flags |= FLAG_FLOAT32;
+	if (useUint16Indices) flags |= FLAG_UINT16_INDICES;
+	view.setUint32(offset, flags, true);
 	offset += 4;
 	view.setFloat64(offset, originX, true);
 	offset += 8;
@@ -251,8 +257,14 @@ export function encodeBatchPayload(
 
 	view.setUint32(offset, faces.length, true);
 	offset += 4;
-	for (let i = 0; i < faces.length; i++) {
-		view.setUint32(offset + i * 4, faces[i]!, true);
+	if (useUint16Indices) {
+		for (let i = 0; i < faces.length; i++) {
+			view.setUint16(offset + i * 2, faces[i]!, true);
+		}
+	} else {
+		for (let i = 0; i < faces.length; i++) {
+			view.setUint32(offset + i * 4, faces[i]!, true);
+		}
 	}
 
 	return uint8ToBase64(u8);
