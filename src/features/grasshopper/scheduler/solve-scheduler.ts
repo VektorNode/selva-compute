@@ -64,6 +64,15 @@ export type SolveResult =
 			response: GrasshopperComputeResponse;
 			durationMs: number;
 			fromCache: boolean;
+			/**
+			 * Definition-cache telemetry for a real compute call (not a Selva-cache
+			 * `fromCache` hit). `false` → the server reused its cached definition via
+			 * the pointer (no upload); `true` → the pointer was cold/stale so the full
+			 * definition was re-uploaded. `undefined` when the server-definition-cache
+			 * fast path didn't run (reuse disabled, or a non-reusable definition such
+			 * as a remote URL).
+			 */
+			definitionReuploaded?: boolean;
 	  }
 	| { status: 'error'; error: RhinoComputeError; durationMs: number }
 	| { status: 'superseded' };
@@ -410,7 +419,11 @@ export class SolveScheduler {
 				...(this.retry !== undefined && { retry: this.retry })
 			};
 
-			const response = await this.runExecutor(item.definition, item.dataTree, config);
+			const { response, definitionReuploaded } = await this.runExecutor(
+				item.definition,
+				item.dataTree,
+				config
+			);
 			const durationMs = performance.now() - startTime;
 
 			if (this.cacheEnabled) this.writeCache(item.ctx.key, response);
@@ -426,7 +439,8 @@ export class SolveScheduler {
 				status: 'success',
 				response,
 				durationMs,
-				fromCache: false
+				fromCache: false,
+				definitionReuploaded
 			});
 		} catch (error) {
 			const durationMs = performance.now() - startTime;
@@ -458,13 +472,13 @@ export class SolveScheduler {
 		definition: string | Uint8Array,
 		dataTree: DataTree[],
 		config: GrasshopperComputeConfig
-	): Promise<GrasshopperComputeResponse> {
+	): Promise<{ response: GrasshopperComputeResponse; definitionReuploaded?: boolean }> {
 		if (
 			!this.cacheKeyExecutor ||
 			!this.reuseServerDefinitionCache ||
 			!isReusableDefinition(definition)
 		) {
-			return this.executor(definition, dataTree, config);
+			return { response: await this.executor(definition, dataTree, config) };
 		}
 
 		const defKey = hashDefinition(definition);
@@ -477,7 +491,7 @@ export class SolveScheduler {
 		if (result.cacheKey) this.serverCacheKeys.set(defKey, result.cacheKey);
 		else this.serverCacheKeys.delete(defKey);
 
-		return result.response;
+		return { response: result.response, definitionReuploaded: result.missed };
 	}
 
 	private drainNext(): void {
