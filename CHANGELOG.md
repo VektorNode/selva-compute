@@ -1,5 +1,42 @@
 # @selvajs/compute
 
+## 2.3.0
+
+### Minor Changes
+
+- 7ee92d6: Detect server-side definition-cache misses by error code, not message.
+
+  When solving by `pointer` (server cache key), a stale/evicted key now reliably
+  triggers the transparent full-upload fallback even against a production Rhino
+  Compute server. Previously the miss was detected by string-matching the server's
+  exception message, which the server scrubs to a generic string when not in debug
+  mode — so the fallback never fired in production and the caller saw a hard error.
+  - Added `ErrorCodes.DEFINITION_NOT_CACHED`.
+  - `fetchRhinoCompute` now reads an optional machine `code` from the server's JSON
+    error body and maps `"definition_not_cached"` onto that code, taking precedence
+    over the status-derived classification.
+  - `solveByCacheKey` / `isDefinitionLoadMiss` match on the code first, keeping the
+    legacy message match as a fallback for debug-mode servers and older forks.
+
+  Requires a Rhino Compute server that emits `code: "definition_not_cached"` on a
+  stale-pointer miss (VektorNode fork). Older servers continue to work via the
+  message fallback when running in debug mode.
+
+## 2.2.0
+
+### Minor Changes
+
+- 5cedef9: Expand `ComputeServerStats` to cover the full rhino.compute proxy/control surface (excluding the SELVA schema endpoints) so consumers no longer hand-roll fetches:
+  - `getInstalledPlugins(kind)` — `/plugins/{gh,rhino}/installed`
+  - `getServerTime()` — `/servertime`
+  - `getIdleSpan()` — `/idlespan`
+  - `launchChildren()` / `launchChild(port)` — `/launch-children`, `/launch-child`
+  - `shutdownChildren(port?)` / `recycleChildren(port?)` — child-lifecycle controls
+  - `purgeAllChildren()` — best-effort fleet-wide cache purge (loops `/cache/purge` across the round-robin pool; reports a `confident` flag, exact only at a single-child pool)
+  - `getActiveChildren({ initialize })` — pass `initialize: false` for a passive count that does not spawn (and wake/bill) an idle server; `getServerStats()` now uses this passive read
+
+  **Fix:** `isServerOnline()` now probes the proxy liveness root `/` instead of the non-existent `/healthcheck` route. The rhino.compute proxy never exposed `/healthcheck`; the old probe was forwarded to a child for an unknown path, so it reported reachability of a child rather than the proxy.
+
 ## 2.1.0
 
 ### Minor Changes

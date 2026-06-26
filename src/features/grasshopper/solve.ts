@@ -1,4 +1,4 @@
-import { fetchRhinoCompute, RhinoComputeError } from '@/core';
+import { fetchRhinoCompute, RhinoComputeError, ErrorCodes } from '@/core';
 import { base64ByteArray, encodeStringToBase64, isBase64 } from '@/core/utils/encoding';
 import { getLogger } from '@/core/utils/logger';
 import { readField } from '@/core/utils/read-field';
@@ -18,12 +18,22 @@ import {
  * a different child in the pool), so the caller should retry with the full
  * definition. Matched as a substring because the server wraps it with a category
  * prefix in its exception handler.
+ *
+ * NOTE: the server only includes this message when running in debug mode; its
+ * production exception handler scrubs the message to a generic string. The
+ * reliable signal is therefore {@link ErrorCodes.DEFINITION_NOT_CACHED}, derived
+ * from the server's machine `code` (which isn't scrubbed). The string match is
+ * kept as a fallback for debug-mode servers and forks that don't yet emit a code.
  */
 const DEFINITION_LOAD_FAILED = 'Unable to load grasshopper definition';
 
 /** Does this error look like a server-side definition-load miss? */
 function isDefinitionLoadMiss(error: unknown): boolean {
-	return error instanceof RhinoComputeError && error.message.includes(DEFINITION_LOAD_FAILED);
+	if (!(error instanceof RhinoComputeError)) return false;
+	return (
+		error.code === ErrorCodes.DEFINITION_NOT_CACHED ||
+		error.message.includes(DEFINITION_LOAD_FAILED)
+	);
 }
 
 /**

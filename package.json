@@ -1,6 +1,6 @@
 {
 	"name": "@selvajs/compute",
-	"version": "2.1.0",
+	"version": "2.3.0",
 	"packageManager": "pnpm@10.18.0",
 	"description": "TypeScript library for Rhino Compute Server - Grasshopper and RhinoCommon",
 	"author": "VektorNode",
@@ -81,6 +81,7 @@
 		"contract:check": "node scripts/fetch-server-contract.mjs --check",
 		"test:seams": "vitest run tests/contract",
 		"test:seams:live": "RUN_LIVE_CONTRACT=1 vitest run tests/contract/server-contract.live.test.ts",
+		"test:stats:live": "vitest run tests/contract/compute-server-stats.live.test.ts",
 		"type-check": "tsc --noEmit",
 		"build-docs": "typedoc",
 		"prepublishOnly": "pnpm build",
