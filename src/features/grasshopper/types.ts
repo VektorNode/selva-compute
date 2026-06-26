@@ -215,6 +215,15 @@ export interface GrasshopperBaseSchema {
 	dataversion?: 7 | 8 | null;
 	/** Whether to use cached solution */
 	cachesolve?: boolean | null;
+	/**
+	 * Opt-in: cache a solve even when the definition reported GH errors. Default
+	 * (false/unset) means errored solves are never cached server-side. Some
+	 * definitions throw GH errors by design (a guarded Python component, a
+	 * filtered branch) while still producing correct geometry — set this so those
+	 * still benefit from the server's solve cache. Only meaningful with
+	 * `cachesolve`. Requires a server that honors it (VektorNode fork).
+	 */
+	cacheerroredsolves?: boolean | null;
 }
 
 /**
@@ -247,6 +256,12 @@ export interface GrasshopperComputeConfig extends ComputeConfig {
 	dataversion?: 7 | 8 | null;
 	/** Whether to use cached solution */
 	cachesolve?: boolean | null;
+	/**
+	 * Opt-in: cache a solve even when the definition reported GH errors. See
+	 * {@link GrasshopperBaseSchema.cacheerroredsolves}. Only meaningful with
+	 * `cachesolve`.
+	 */
+	cacheerroredsolves?: boolean | null;
 }
 
 /**
