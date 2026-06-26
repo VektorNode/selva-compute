@@ -265,6 +265,7 @@ export function applyOptionalComputeSettings(
 	options: GrasshopperComputeConfig
 ): void {
 	if (options.cachesolve != null) arglist.cachesolve = options.cachesolve;
+	if (options.cacheerroredsolves != null) arglist.cacheerroredsolves = options.cacheerroredsolves;
 	if (options.modelunits != null) arglist.modelunits = options.modelunits;
 	if (options.angletolerance != null) arglist.angletolerance = options.angletolerance;
 	if (options.absolutetolerance != null) arglist.absolutetolerance = options.absolutetolerance;
