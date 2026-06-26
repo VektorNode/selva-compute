@@ -127,7 +127,7 @@ export function base64ToRhinoObject(
 	}
 ) {
 	//Make a type definition for this?
-	let decodata: null | object = null;
+	let decodata: object;
 	try {
 		decodata = JSON.parse(item.data);
 	} catch (error) {
