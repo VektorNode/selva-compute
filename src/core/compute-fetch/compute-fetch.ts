@@ -1,4 +1,4 @@
-import { RhinoComputeError, ErrorCodes } from '../errors';
+import { RhinoComputeError, ErrorCodes, type ErrorCode } from '../errors';
 import { getLogger } from '../utils/logger';
 
 import type { ComputeConfig, RetryPolicy, ServerTiming } from '../types';
@@ -110,7 +110,8 @@ function throwHttpError(
 	requestId: string,
 	requestSize: number,
 	serverUrl: string,
-	errorBody: string
+	errorBody: string,
+	serverCode?: string
 ): never {
 	const { status, statusText } = response;
 
@@ -161,7 +162,27 @@ function throwHttpError(
 		code: ErrorCodes.UNKNOWN_ERROR
 	};
 
-	throw new RhinoComputeError(error.message, error.code, { statusCode: status, context });
+	// A machine code in the server's error body (e.g. "definition_not_cached")
+	// outranks the status-based mapping: it's stable across the server's
+	// production message-scrubbing, where the human message is replaced with a
+	// generic string. Keep the status-derived message for context.
+	const code = mapServerErrorCode(serverCode) ?? error.code;
+
+	throw new RhinoComputeError(error.message, code, { statusCode: status, context });
+}
+
+/**
+ * Map a server-supplied error code (from the JSON error body's `code` field) to
+ * one of our {@link ErrorCodes}. Returns `undefined` for an absent or unknown
+ * code so the caller falls back to its status-based mapping.
+ */
+function mapServerErrorCode(serverCode?: string): ErrorCode | undefined {
+	switch (serverCode) {
+		case 'definition_not_cached':
+			return ErrorCodes.DEFINITION_NOT_CACHED;
+		default:
+			return undefined;
+	}
 }
 
 // ============================================================================
@@ -299,10 +320,17 @@ async function handleResponse(
 			}
 		}
 
+		// A machine-readable code the server may tag onto its error body (e.g.
+		// "definition_not_cached"). Unlike the human `message`, it isn't scrubbed in
+		// the server's production (non-debug) mode, so it's the reliable signal for
+		// classifying the error (see throwHttpError → mapServerErrorCode).
+		let serverCode: string | undefined;
+
 		// Check if it's a valid compute response with errors/warnings
 		if (response.status === 500) {
 			try {
 				const parsed = JSON.parse(errorBody);
+				if (typeof parsed?.code === 'string') serverCode = parsed.code;
 				// If it has values, it's a partial success with errors
 				if (parsed?.values && (parsed.errors || parsed.warnings)) {
 					if (debug) {
@@ -355,7 +383,7 @@ async function handleResponse(
 			}
 		}
 
-		throwHttpError(response, fullUrl, requestId, requestSize, serverUrl, errorBody);
+		throwHttpError(response, fullUrl, requestId, requestSize, serverUrl, errorBody, serverCode);
 	}
 
 	log(`✅ Request [${requestId}] completed in ${responseTime}ms`, debug);
