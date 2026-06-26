@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { prepareGrasshopperArgs } from '../solve';
+import { applyOptionalComputeSettings, prepareGrasshopperArgs } from '../solve';
+import type { GrasshopperRequestSchema } from '../types';
 import { isBase64 } from '@/core/utils/encoding';
 
 describe('solve', () => {
@@ -59,6 +60,33 @@ describe('solve', () => {
 
 			expect(result.values).toEqual(dataTree);
 			expect(result.values).toHaveLength(2);
+		});
+	});
+
+	describe('applyOptionalComputeSettings', () => {
+		const base = (): GrasshopperRequestSchema => ({ algo: null, pointer: null, values: [] });
+
+		it('forwards cacheerroredsolves when set', () => {
+			const args = base();
+			applyOptionalComputeSettings(args, { serverUrl: 'http://x', cacheerroredsolves: true });
+			expect(args.cacheerroredsolves).toBe(true);
+		});
+
+		it('omits cacheerroredsolves when unset (back-compat: older servers never see it)', () => {
+			const args = base();
+			applyOptionalComputeSettings(args, { serverUrl: 'http://x' });
+			expect('cacheerroredsolves' in args).toBe(false);
+		});
+
+		it('forwards cachesolve and cacheerroredsolves independently', () => {
+			const args = base();
+			applyOptionalComputeSettings(args, {
+				serverUrl: 'http://x',
+				cachesolve: true,
+				cacheerroredsolves: false
+			});
+			expect(args.cachesolve).toBe(true);
+			expect(args.cacheerroredsolves).toBe(false);
 		});
 	});
 
