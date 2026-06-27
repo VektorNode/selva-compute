@@ -22,9 +22,6 @@ import {
  * when working with Grasshopper results in client applications.
  */
 export default class GrasshopperResponseProcessor {
-	/**
-	 * Store the compute response for reuse.
-	 */
 	constructor(
 		private readonly response: GrasshopperComputeResponse,
 		private readonly debug: boolean = false
@@ -34,11 +31,9 @@ export default class GrasshopperResponseProcessor {
 	 * Extract all values in the response.
 	 *
 	 * @typeParam T - Expected structure of the return value. Defaults to a simple key/value map. (later cast as needed)
-	 * @param byId - If true, keys are parameter IDs; if false, keys are parameter names.
+	 * @param byId - Key by parameter ID instead of name. Requires the VektorNode rhino.compute branch.
 	 * @param options - Controls parsing behavior such as Rhino geometry decoding.
 	 * @returns Parsed Grasshopper output values.
-	 *
-	 * **Note:** Using `byId` only works with the custom VektorNode rhino.compute branch.
 	 *
 	 * @example
 	 * ```ts
@@ -65,13 +60,13 @@ export default class GrasshopperResponseProcessor {
 	 * @param options - Parsing configuration (e.g. disable parsing or enable Rhino).
 	 * @returns Single parsed value, array of values, or undefined if the parameter is absent.
 	 *
+	 * `byId` requires the VektorNode rhino.compute branch.
+	 *
 	 * @example
 	 * ```ts
 	 * const schema = processor.getValue({ byName: 'Schema' });
 	 * const output = processor.getValue({ byId: 'a4be1c1e-23f9-4c27-b942-7f3bb2c45c6f' });
 	 * ```
-	 *
-	 * **Note:** `byId` only works with the custom VektorNode rhino.compute branch.
 	 */
 	public getValue(
 		selector: { byName: string } | { byId: string },
@@ -81,52 +76,19 @@ export default class GrasshopperResponseProcessor {
 	}
 
 	/**
-	 * @deprecated Use `getValue({ byName })` instead.
-	 */
-	public getValueByParamName(paramName: string, options?: GetValuesOptions): any {
-		return getValue(this.response, { byName: paramName }, options);
-	}
-
-	/**
-	 * @deprecated Use `getValue({ byId })` instead.
-	 */
-	public getValueByParamId(paramId: string, options?: GetValuesOptions): any {
-		return getValue(this.response, { byId: paramId }, options);
-	}
-
-	/**
-	 * Convert all geometry results into Three.js mesh objects.
+	 * Decode all geometry results into Three.js meshes/lines ready for rendering.
+	 * The processor's `debug` flag is merged with `options` (explicit options win).
 	 *
-	 * This uses internal helpers to decode Rhino geometry into Three.js
-	 * primitives such as meshes and lines, making them ready for rendering.
+	 * Requires the **Selva Display** Grasshopper component and the VektorNode
+	 * rhino.compute branch. Three.js is loaded dynamically, so install it as a
+	 * peer dependency before calling this.
 	 *
-	 * All processing options (scaling, positioning, compression, etc.) can be customized.
-	 * The processor's debug flag is merged with options - explicit options take precedence.
-	 *
-	 * **Note:** This only works when using the **Selva Display** component in Grasshopper, and requires the custom branch of rhino.compute from VektorNode. This method dynamically imports three.js visualization modules. Ensure three.js is installed as a peer dependency if you use this feature.
-	 *
-	 * @param options - Configuration for mesh extraction and parsing. Overrides processor's debug flag if provided.
-	 * @returns Promise resolving to an array of Three.js mesh objects.
-	 * @throws {RhinoComputeError} If three.js visualization module cannot be loaded.
+	 * @throws {RhinoComputeError} If the three.js visualization module can't load.
 	 *
 	 * @example
 	 * ```ts
 	 * const meshes = await processor.extractMeshesFromResponse();
 	 * scene.add(...meshes);
-	 * ```
-	 *
-	 * @example
-	 * ```ts
-	 * const meshes = await processor.extractMeshesFromResponse({
-	 *   debug: true,
-	 *   allowScaling: true,
-	 *   allowAutoPosition: false,
-	 *   parsing: {
-	 *     mergeByMaterial: false,
-	 *     applyTransforms: true,
-	 *     debug: true,
-	 *   },
-	 * });
 	 * ```
 	 */
 	public async extractMeshesFromResponse(options?: MeshExtractionOptions) {
@@ -155,13 +117,9 @@ export default class GrasshopperResponseProcessor {
 	}
 
 	/**
-	 * Extract internal file data structures from the response.
-	 * This includes Grasshopper-generated textures, JSON exports,
-	 * CAD formats, or any file structure packaged in the response.
-	 *
-	 * **Note:** This only works when using the **Block to File** and **Geometry To File** components from the Selva plugin in Grasshopper, and requires the custom branch of rhino.compute from VektorNode.
-	 *
-	 * @returns Raw file data entries.
+	 * Raw file entries packaged in the response (textures, JSON, CAD exports, …).
+	 * Produced by the Selva **Block to File** / **Geometry To File** components on
+	 * the VektorNode rhino.compute branch.
 	 */
 	private getFileData(): FileData[] {
 		return extractFileData(this.response);

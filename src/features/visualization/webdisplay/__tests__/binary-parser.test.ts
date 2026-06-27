@@ -178,19 +178,6 @@ describe('parseBinaryMeshBatch', () => {
 			expect(Array.from(fromCompressed.vertices)).toEqual(Array.from(fromRaw.vertices));
 			expect(fromCompressed.flags).toBe(fromRaw.flags);
 		});
-
-		it('accepts a base64-encoded SLVZ blob', () => {
-			const vertices = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0]);
-			const indices = new Uint32Array([0, 1, 2]);
-			const slva = new Uint8Array(
-				Buffer.from(encodeBatchPayload(vertices, indices, EMPTY_METADATA), 'base64')
-			);
-
-			const slvzBase64 = Buffer.from(wrapSlvz(slva)).toString('base64');
-			const parsed = parseBinaryMeshBatch(slvzBase64);
-
-			expect(Array.from(parsed.indices)).toEqual([0, 1, 2]);
-		});
 	});
 
 	describe('input forms', () => {

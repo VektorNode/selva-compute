@@ -112,7 +112,7 @@ export function decodeRhinoObject<T extends Record<string, unknown>>(
 			continue;
 		}
 
-		if (deep && typeof v === 'object') {
+		if (deep) {
 			out[key] = decodeRhinoObject(v as any, rhino, options);
 		}
 	}

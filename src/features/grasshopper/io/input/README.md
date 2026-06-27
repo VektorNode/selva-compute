@@ -66,7 +66,7 @@ and is registered in `INPUT_TYPE_PARSERS`:
 ```typescript
 // input-processors.ts (simplified)
 const paramType = canonicalizeParamType(rawInput.paramType);
-const schema = normalizeDefault({ ...rawInput, paramType });
+const { schema } = normalizeDefaultWithWarning({ ...rawInput, paramType });
 const parser = INPUT_TYPE_PARSERS.get(paramType);
 
 try {

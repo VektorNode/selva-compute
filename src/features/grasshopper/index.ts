@@ -21,17 +21,8 @@ export type {
 	CacheOptions,
 	SolveSchedulerOptions,
 	SolveContext,
-	SolveResult,
-	SolveExecutor,
-	CacheKeyExecutor
+	SolveResult
 } from './scheduler/solve-scheduler';
-export {
-	hashSolveInput,
-	hashDefinition,
-	stableStringify,
-	fnv1a,
-	fnv1aBytes
-} from './scheduler/stable-hash';
 
 // ============================================================================
 // COMPUTATION
@@ -42,20 +33,14 @@ export { solveGrasshopperDefinition } from './solve';
 // I/O PROCESSING
 // ============================================================================
 export { fetchDefinitionIO, fetchParsedDefinitionIO } from './io/definition-io';
-export {
-	processInput,
-	processInputs,
-	processInputWithError,
-	processInputsWithErrors
-} from './io/input/input-processors';
-export { getValues, getValue, extractFileData } from './io/output/response-processors';
+export { processInput, processInputs, processInputsWithErrors } from './io/input/input-processors';
+export { getValues, getValue } from './io/output/response-processors';
 export type {
 	GetValuesOptions,
 	GetValuesResult,
 	ParsedContext
 } from './io/output/response-processors';
-export { registerDecoder, decodeRhinoGeometry, decodeRhinoObject } from './io/output/rhino-decoder';
-export type { DecodeRhinoOptions } from './io/output/rhino-decoder';
+export { registerDecoder } from './io/output/rhino-decoder';
 
 // ============================================================================
 // DATA STRUCTURES
@@ -78,8 +63,6 @@ export type {
 	DataTreeDefault,
 	InnerTreeData,
 	DataTree,
-	Values,
-	ProcessedDataItem,
 	OutputType,
 	DefaultValue,
 	BaseInputType,

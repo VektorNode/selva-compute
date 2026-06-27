@@ -61,8 +61,8 @@ function itemType(item: unknown): string | undefined {
  * - otherwise → flatten all branch items: 0 → `undefined`, 1 → the value,
  *   N → the array.
  *
- * Returns the normalized schema plus an optional `warning`. {@link normalizeDefault}
- * is the schema-only convenience wrapper for callers that don't need the warning.
+ * Returns the normalized schema plus an optional `warning`. Callers that don't
+ * need the warning channel read `.schema` off the result.
  */
 export function normalizeDefaultWithWarning(input: InputParamSchema): {
 	schema: InputParamSchema;
@@ -142,12 +142,4 @@ export function normalizeDefaultWithWarning(input: InputParamSchema): {
 	} else {
 		return { schema: { ...input, default: allValues } };
 	}
-}
-
-/**
- * Schema-only convenience wrapper around {@link normalizeDefaultWithWarning},
- * for callers (and tests) that don't consume the warning channel.
- */
-export function normalizeDefault(input: InputParamSchema): InputParamSchema {
-	return normalizeDefaultWithWarning(input).schema;
 }

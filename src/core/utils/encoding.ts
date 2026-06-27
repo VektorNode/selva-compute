@@ -1,5 +1,4 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
-import { getLogger } from './logger';
 
 /**
  * Encodes a string to base64 (Node 20+ safe)
@@ -107,49 +106,4 @@ export function base64ByteArray(bytes: Uint8Array): string {
 		ErrorCodes.INVALID_STATE,
 		{ context: { environmentInfo: 'btoa or Buffer not available' } }
 	);
-}
-
-/**
- * Convert base64 string to rhino object
- *
- * @internal Internal helper for decoding Rhino objects — not public API.
- *
- * Source: https://github.com/mcneel/compute.rhino3d.appserver/blob/92c95a3b1d076a4d4a5360214ffd27c46425ff03/src/examples/convert/scriptjs
- * @param rhino is the rhino module form rhino3dm. Since not properly typed its not used here.
- * @param item
- * @returns
- */
-export function base64ToRhinoObject(
-	rhino: any,
-	item: {
-		type: string;
-		data: string;
-	}
-) {
-	//Make a type definition for this?
-	let decodata: object;
-	try {
-		decodata = JSON.parse(item.data);
-	} catch (error) {
-		decodata = item;
-		getLogger().warn('Failed to parse JSON, returning original data:', error, item);
-	}
-	if (item.type === 'System.String') {
-		try {
-			return rhino.DracoCompression.decompressBase64String(decodata);
-		} catch (error) {
-			getLogger().error('Failed to decompress Draco base64 string:', error);
-		}
-	} else if (
-		typeof decodata === 'object' &&
-		Object.prototype.hasOwnProperty.call(decodata, 'opennurbs')
-	) {
-		return rhino.CommonObject.decode(decodata);
-	} else if (typeof decodata === 'object') {
-		try {
-			return rhino.CommonObject.decode(decodata);
-		} catch (error) {
-			getLogger().error('Failed to decode Rhino object:', error);
-		}
-	}
 }

@@ -158,13 +158,19 @@ definition`) the `solveByCacheKey` primitive transparently falls back to a full
   21-test scheduler suite (supersede-then-late-rejection, `cancelAll`). Any new
   settle path must go through these helpers.
 
+- **`scaleFactor` was applied in two places** _(fixed)._ `buildMeshesFromParsed`
+  scaled meshes when `scaleFactor !== 1` (a `scaleFactor?` option on
+  `parseMeshBatchObject`/`Blob`), _and_ the webdisplay orchestrator re-scaled the
+  returned meshes itself (`webdisplay-parser.ts`, from `modelunits`). The real
+  extraction path goes through the orchestrator, which never passed `scaleFactor`
+  into the parser — so the in-parser knob was dead on that path, yet a caller using
+  `parseMeshBatchObject` directly _and_ the orchestrator would double-scale.
+  Resolved by giving the **orchestrator** sole ownership of unit→scale (it is the
+  only thing that sees `modelunits`): removed `scaleFactor` from the two parsers'
+  options and from the private `BuildOptions`, deleting the dead scale loop in
+  `buildMeshesFromParsed`. The parsers now always emit identity-scaled meshes;
+  pinned by the updated `batch-parser` suite.
+
 ## Known follow-ups
 
-- **`scaleFactor` is applied in two places.** `buildMeshesFromParsed` scales meshes
-  when `scaleFactor !== 1` (used by `parseMeshBatchObject`/`Blob`), _and_ the
-  webdisplay orchestrator re-scales the returned meshes itself
-  (`webdisplay-parser.ts`, from `modelunits`). The real extraction path goes
-  through the orchestrator, so the in-parser `scaleFactor` is effectively dead
-  there — but a caller using `parseMeshBatchObject` directly _and_ the orchestrator
-  would double-scale. Deferred: pick one scaling home (likely the orchestrator,
-  which owns unit→scale) and remove the other.
+_(none currently)_
