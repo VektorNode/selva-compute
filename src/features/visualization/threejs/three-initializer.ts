@@ -55,6 +55,16 @@ export const initThree = function (
 	dispose: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
+	/**
+	 * Add caller-owned geometry (lines, annotations, construction aids) to the scene. The object is
+	 * tagged `userData.source = 'user'` so it persists across `updateScene` solves instead of being
+	 * cleared with compute content. It is treated as normal content for fit-to-view framing.
+	 */
+	addUserGeometry: (object: THREE.Object3D) => void;
+	/** Remove a single user-added object and dispose its geometry/materials. */
+	removeUserGeometry: (object: THREE.Object3D) => void;
+	/** Remove and dispose all user-added geometry (every object tagged `source === 'user'`). */
+	clearUserGeometry: () => void;
 } {
 	const config = applyDefaults(options || {});
 
@@ -257,6 +267,40 @@ export const initThree = function (
 	// geometry later (via updateScene) should call updateShadowBounds again afterwards.
 	updateShadowBounds();
 
+	// Dispose one object's renderable resources (geometry + materials), recursing into children so
+	// Groups of lines/points clean up fully.
+	const disposeObjectTree = (root: THREE.Object3D) => {
+		root.traverse((object) => {
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
+			renderable.geometry?.dispose();
+			if (Array.isArray(renderable.material)) {
+				renderable.material.forEach((material) => material.dispose());
+			} else {
+				renderable.material?.dispose();
+			}
+		});
+	};
+
+	const addUserGeometry = (object: THREE.Object3D) => {
+		object.userData.source = 'user';
+		scene.add(object);
+	};
+
+	const removeUserGeometry = (object: THREE.Object3D) => {
+		object.removeFromParent();
+		disposeObjectTree(object);
+	};
+
+	const clearUserGeometry = () => {
+		// Snapshot first — removeFromParent mutates scene.children during iteration.
+		const userObjects = scene.children.filter((child) => child.userData.source === 'user');
+		userObjects.forEach((object) => {
+			object.removeFromParent();
+			disposeObjectTree(object);
+		});
+	};
+
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
@@ -303,7 +347,10 @@ export const initThree = function (
 		updateShadowBounds,
 		dispose,
 		fitToView: eventHandlers.fitToView,
-		clearSelection: eventHandlers.clearSelection
+		clearSelection: eventHandlers.clearSelection,
+		addUserGeometry,
+		removeUserGeometry,
+		clearUserGeometry
 	};
 };
 

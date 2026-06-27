@@ -410,6 +410,7 @@ function createMergedMesh(
 	threeMesh.receiveShadow = true;
 
 	threeMesh.userData = {
+		source: 'compute',
 		name: threeMesh.name,
 		layer: firstMesh?.layer ?? '',
 		originalIndex: firstMesh?.originalIndex ?? 0,
@@ -462,6 +463,7 @@ function createIndividualMeshes(
 		const mesh = new THREE.Mesh(geometry, materials[group.materialId]);
 		mesh.name = meshMeta.name;
 		mesh.userData = {
+			source: 'compute',
 			name: meshMeta.name,
 			layer: meshMeta.layer ?? '',
 			originalIndex: meshMeta.originalIndex,

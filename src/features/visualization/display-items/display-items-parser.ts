@@ -133,7 +133,13 @@ function buildCurveLine(
 	const line = new Line2(geometry, material);
 	line.computeLineDistances(); // required for any future dashed styling; cheap
 	line.name = item.name;
-	line.userData = { id: item.id, layer: item.layer, kind: 'curve', metadata: item.metadata };
+	line.userData = {
+		source: 'compute',
+		id: item.id,
+		layer: item.layer,
+		kind: 'curve',
+		metadata: item.metadata
+	};
 	return line;
 }
 
@@ -157,7 +163,13 @@ function buildPoint(item: DisplayPoint, applyTransforms: boolean): THREE.Points 
 
 	const points = new THREE.Points(geometry, material);
 	points.name = item.name;
-	points.userData = { id: item.id, layer: item.layer, kind: 'point', metadata: item.metadata };
+	points.userData = {
+		source: 'compute',
+		id: item.id,
+		layer: item.layer,
+		kind: 'point',
+		metadata: item.metadata
+	};
 	return points;
 }
 
