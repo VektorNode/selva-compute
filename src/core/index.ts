@@ -66,9 +66,6 @@ export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 // Configuration
 export type { ComputeConfig, RhinoModelUnit, RetryPolicy, ServerTiming } from './types';
 
-// String utilities
-export { toCamelCase, camelcaseKeys } from './utils/camel-case';
-
 // ============================================================================
 // FILE HANDLING (generic zip / base64 / download — not Grasshopper-specific)
 // ============================================================================

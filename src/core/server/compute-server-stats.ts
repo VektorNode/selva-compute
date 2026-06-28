@@ -34,6 +34,12 @@ export default class ComputeServerStats {
 	 * @param serverUrl - Base URL of the Rhino Compute server with http:// or https:// scheme (e.g., 'http://localhost:6500')
 	 * @param apiKey - Optional API key for authentication
 	 */
+	/** Timeout (ms) for the fast read/monitoring endpoints. */
+	private static readonly DEFAULT_TIMEOUT_MS = 5000;
+
+	/** Timeout (ms) for child-lifecycle POSTs — a cold Windows child can take ~30s to spawn. */
+	private static readonly LIFECYCLE_TIMEOUT_MS = 60_000;
+
 	constructor(serverUrl: string, apiKey?: string) {
 		this.serverUrl = validateServerUrl(serverUrl);
 		this.apiKey = apiKey;
@@ -52,6 +58,22 @@ export default class ComputeServerStats {
 		}
 
 		return headers;
+	}
+
+	/**
+	 * `fetch` wrapper that aborts after `timeoutMs` so a hung connection can't stall
+	 * a probe (or the `monitor()` loop) forever. Pass `0` to disable the timeout.
+	 */
+	private fetchWithTimeout(
+		url: string,
+		init: RequestInit = {},
+		timeoutMs: number = ComputeServerStats.DEFAULT_TIMEOUT_MS
+	): Promise<Response> {
+		const requestInit: RequestInit = { headers: this.buildHeaders(), ...init };
+		if (timeoutMs > 0 && !requestInit.signal) {
+			requestInit.signal = AbortSignal.timeout(timeoutMs);
+		}
+		return fetch(url, requestInit);
 	}
 
 	/**
@@ -75,13 +97,9 @@ export default class ComputeServerStats {
 		// unknown path would instead be forwarded to a child and only tells us the
 		// proxy can reach one.
 		const url = `${this.serverUrl}/`;
-		const init: RequestInit = { headers: this.buildHeaders(), method: 'GET' };
-		if (timeoutMs > 0) {
-			init.signal = AbortSignal.timeout(timeoutMs);
-		}
 
 		try {
-			const response = await fetch(url, init);
+			const response = await this.fetchWithTimeout(url, { method: 'GET' }, timeoutMs);
 
 			return response.ok;
 		} catch (err) {
@@ -111,10 +129,14 @@ export default class ComputeServerStats {
 			? `${this.serverUrl}/activechildren`
 			: `${this.serverUrl}/activechildren?initialize=false`;
 
+		// `initialize` mode may spawn children before answering — give it the
+		// lifecycle budget; the passive read stays on the short default.
+		const timeoutMs = initialize
+			? ComputeServerStats.LIFECYCLE_TIMEOUT_MS
+			: ComputeServerStats.DEFAULT_TIMEOUT_MS;
+
 		try {
-			const response = await fetch(url, {
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(url, {}, timeoutMs);
 			if (!response.ok) {
 				getLogger().warn('[ComputeServerStats] Failed to fetch active children:', response.status);
 				return null;
@@ -148,9 +170,7 @@ export default class ComputeServerStats {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}/version`, {
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(`${this.serverUrl}/version`);
 
 			if (!response.ok) {
 				getLogger().warn('[ComputeServerStats] Failed to fetch version:', response.status);
@@ -201,9 +221,7 @@ export default class ComputeServerStats {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}/plugins/${kind}/installed`, {
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(`${this.serverUrl}/plugins/${kind}/installed`);
 
 			if (!response.ok) {
 				getLogger().warn(`[ComputeServerStats] Failed to fetch ${kind} plugins:`, response.status);
@@ -282,9 +300,8 @@ export default class ComputeServerStats {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}/cache/purge`, {
-				method: 'POST',
-				headers: this.buildHeaders()
+			const response = await this.fetchWithTimeout(`${this.serverUrl}/cache/purge`, {
+				method: 'POST'
 			});
 
 			if (!response.ok) {
@@ -383,9 +400,7 @@ export default class ComputeServerStats {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}/servertime`, {
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(`${this.serverUrl}/servertime`);
 			if (!response.ok) {
 				getLogger().warn('[ComputeServerStats] Failed to fetch server time:', response.status);
 				return null;
@@ -415,9 +430,7 @@ export default class ComputeServerStats {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}/idlespan`, {
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(`${this.serverUrl}/idlespan`);
 			if (!response.ok) {
 				getLogger().warn('[ComputeServerStats] Failed to fetch idle span:', response.status);
 				return null;
@@ -504,16 +517,18 @@ export default class ComputeServerStats {
 	/**
 	 * POST a control endpoint that replies with a JSON object and return it,
 	 * degrading to `null` on any non-2xx, non-JSON, or network failure. Shared by
-	 * the child-lifecycle methods so their failure semantics stay identical.
+	 * the child-lifecycle methods so their failure semantics stay identical. Uses
+	 * the longer lifecycle timeout since a spawn/recycle can take ~30s.
 	 */
 	private async postJson<T>(path: string): Promise<T | null> {
 		this.ensureNotDisposed();
 
 		try {
-			const response = await fetch(`${this.serverUrl}${path}`, {
-				method: 'POST',
-				headers: this.buildHeaders()
-			});
+			const response = await this.fetchWithTimeout(
+				`${this.serverUrl}${path}`,
+				{ method: 'POST' },
+				ComputeServerStats.LIFECYCLE_TIMEOUT_MS
+			);
 			if (!response.ok) {
 				getLogger().warn(`[ComputeServerStats] POST ${path} failed:`, response.status);
 				return null;
