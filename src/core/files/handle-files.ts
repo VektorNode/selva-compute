@@ -104,24 +104,22 @@ const decodeResponseFiles = (dataItems: FileData[]): ProcessedFile[] => {
 	const processedFiles: ProcessedFile[] = [];
 
 	dataItems.forEach((item) => {
-		let filePath = `${item.fileName}${item.fileType}`;
-
-		if (item.subFolder && item.subFolder.trim() !== '') {
-			filePath = `${item.subFolder}/${filePath}`;
-		}
+		const fileName = `${item.fileName}${item.fileType}`;
+		const filePath =
+			item.subFolder && item.subFolder.trim() !== '' ? `${item.subFolder}/${fileName}` : fileName;
 
 		if (item.isBase64Encoded === true && item.data) {
 			// `decodeBase64ToBinary` already returns a correctly-bounded view;
 			// re-wrapping `.buffer` would discard its byteOffset/byteLength and
 			// expose the whole (possibly pooled) backing buffer as corrupt content.
 			processedFiles.push({
-				fileName: `${item.fileName}${item.fileType}`,
+				fileName,
 				content: decodeBase64ToBinary(item.data),
 				path: filePath
 			});
 		} else if (item.isBase64Encoded === false && item.data) {
 			processedFiles.push({
-				fileName: `${item.fileName}${item.fileType}`,
+				fileName,
 				content: item.data,
 				path: filePath
 			});
@@ -197,7 +195,7 @@ const processFiles = async (
  * @returns A Promise that resolves when the ZIP is generated and download is triggered.
  */
 async function createAndDownloadZip(files: ProcessedFile[], zipName: string): Promise<void> {
-	const { zipSync, strToU8 } = await import('fflate');
+	const { zip, strToU8 } = await import('fflate');
 
 	// Convert files to fflate format
 	const zipData: Record<string, Uint8Array> = {};
@@ -205,7 +203,11 @@ async function createAndDownloadZip(files: ProcessedFile[], zipName: string): Pr
 		zipData[file.path] = typeof file.content === 'string' ? strToU8(file.content) : file.content;
 	});
 
-	const zipped = zipSync(zipData, { level: 6 });
+	// Async `zip` deflates on a worker thread instead of blocking the main thread
+	// like `zipSync` — keeps the UI responsive for large geometry exports.
+	const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+		zip(zipData, { level: 6 }, (err, data) => (err ? reject(err) : resolve(data)));
+	});
 
 	const blob = new Blob([zipped as BlobPart], { type: 'application/zip' });
 	saveFile(blob, `${zipName}.zip`);

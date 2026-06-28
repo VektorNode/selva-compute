@@ -90,7 +90,9 @@ export function base64ByteArray(bytes: Uint8Array): string {
 		const CHUNK = 0x8000;
 		let s = '';
 		for (let i = 0; i < bytes.length; i += CHUNK) {
-			s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
+			// A Uint8Array subarray is array-like, so pass it straight to
+			// fromCharCode.apply — no need to copy it into a plain Array first.
+			s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
 		}
 		return globalThis.btoa(s);
 	}
