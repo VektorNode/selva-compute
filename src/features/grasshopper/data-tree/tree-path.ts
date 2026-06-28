@@ -6,7 +6,9 @@ import type { DataTreeDefault } from '../types';
  * shape (`DataTreePath`); anything testing "does this string name a branch?"
  * should use this rather than re-inlining the regex.
  */
-export const TREE_PATH_RE = /^\{([\d;]*)\}$/;
+// Matches `{}`, `{0}`, `{0;1;2}` — but NOT empty segments like `{0;}` / `{;}` /
+// `{0;;1}`, which would otherwise split to phantom 0s (`Number('') === 0`).
+export const TREE_PATH_RE = /^\{(\d+(?:;\d+)*)?\}$/;
 
 /**
  * Membership test for a {@link DataTreeDefault}: an object keyed entirely by

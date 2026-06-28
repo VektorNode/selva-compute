@@ -112,6 +112,11 @@ export type MeasureConfig = {
 	/** CSS class for the distance label. */
 	labelClassName?: string;
 	/**
+	 * Model unit (pass the response's `modelunits`). The scene is in meters, so the default label is
+	 * converted to this unit — a mm model reads "25.0 mm". Defaults to meters. Ignored if `format` is set.
+	 */
+	displayUnit?: string;
+	/**
 	 * Format the measurement → label text. Receives the straight-line `distance` and per-axis `delta`.
 	 * Default renders the total plus a Δx/Δy/Δz breakdown.
 	 */

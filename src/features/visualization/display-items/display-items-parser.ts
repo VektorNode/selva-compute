@@ -266,12 +266,18 @@ function sampleUniform(
 
 	const tolerance = chordTolerance(curve);
 
-	const out: THREE.Vector3[] = [evalAt(t0)];
+	// Evaluate each segment boundary once and carry it forward as the next `pa`,
+	// instead of re-evaluating ta/tb (3 pointAt calls per segment → 1).
+	let ta = t0;
+	let pa = evalAt(t0);
+	const out: THREE.Vector3[] = [pa];
 	for (let i = 0; i < CURVE_INITIAL_SEGMENTS; i++) {
-		const ta = t0 + (span * i) / CURVE_INITIAL_SEGMENTS;
 		const tb = t0 + (span * (i + 1)) / CURVE_INITIAL_SEGMENTS;
-		subdivide(ta, evalAt(ta), tb, evalAt(tb), evalAt, tolerance, CURVE_MAX_SUBDIVISION_DEPTH, out);
-		out.push(evalAt(tb));
+		const pb = evalAt(tb);
+		subdivide(ta, pa, tb, pb, evalAt, tolerance, CURVE_MAX_SUBDIVISION_DEPTH, out);
+		out.push(pb);
+		ta = tb;
+		pa = pb;
 	}
 
 	return out;

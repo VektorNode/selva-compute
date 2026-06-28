@@ -143,6 +143,7 @@ export const initThree = function (
 						snapPixels: config.measure.snapPixels,
 						color: config.measure.color,
 						labelClassName: config.measure.labelClassName,
+						displayUnit: config.measure.displayUnit,
 						format: config.measure.format
 					}
 				})
@@ -331,6 +332,12 @@ export const initThree = function (
 				renderable.material?.dispose();
 			}
 		});
+
+		// Scene-level textures the traversal above can't reach.
+		scene.environment?.dispose();
+		if (scene.background instanceof THREE.Texture) {
+			scene.background.dispose();
+		}
 	};
 
 	return {
@@ -436,13 +443,13 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 		},
 		lighting: {
 			enableSunlight: options.lighting?.enableSunlight ?? true,
-			sunlightIntensity: options.lighting?.sunlightIntensity || 1,
+			sunlightIntensity: options.lighting?.sunlightIntensity ?? 1,
 			// Sun overhead in a Z-up scene: height on +Z, offset across X/Y.
 			sunlightPosition:
 				options.lighting?.sunlightPosition ||
 				new THREE.Vector3(defaults.lightDistance, defaults.lightDistance, defaults.lightHeight),
 			ambientLightColor: options.lighting?.ambientLightColor || new THREE.Color(0x404040),
-			ambientLightIntensity: options.lighting?.ambientLightIntensity || 1,
+			ambientLightIntensity: options.lighting?.ambientLightIntensity ?? 1,
 			sunlightColor: options.lighting?.sunlightColor || 0xffffff // Default to white sunlight
 		},
 		environment: {
@@ -456,8 +463,8 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			enabled: options.floor?.enabled ?? false,
 			size: options.floor?.size || defaults.floorSize,
 			color: options.floor?.color || new THREE.Color(0x808080),
-			roughness: options.floor?.roughness || 0.7,
-			metalness: options.floor?.metalness || 0.0,
+			roughness: options.floor?.roughness ?? 0.7,
+			metalness: options.floor?.metalness ?? 0.0,
 			receiveShadow: options.floor?.receiveShadow ?? true
 		},
 		render: {
@@ -466,7 +473,7 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			antialias: options.render?.antialias ?? true,
 			pixelRatio: options.render?.pixelRatio || Math.min(window.devicePixelRatio, 2),
 			toneMapping: options.render?.toneMapping || THREE.NeutralToneMapping,
-			toneMappingExposure: options.render?.toneMappingExposure || 1,
+			toneMappingExposure: options.render?.toneMappingExposure ?? 1,
 			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false,
 			ambientOcclusion: options.render?.ambientOcclusion ?? false,
 			aoIntensity: options.render?.aoIntensity ?? 1
@@ -510,6 +517,7 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			snapPixels: options.measure?.snapPixels,
 			color: options.measure?.color,
 			labelClassName: options.measure?.labelClassName,
+			displayUnit: options.measure?.displayUnit,
 			format: options.measure?.format
 		},
 		events: {
@@ -893,7 +901,7 @@ function setupRenderer(
 	}
 
 	renderer.toneMapping = config.render.toneMapping!;
-	renderer.toneMappingExposure = config.render.toneMappingExposure || 1.0;
+	renderer.toneMappingExposure = config.render.toneMappingExposure ?? 1.0;
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 	renderer.sortObjects = true;

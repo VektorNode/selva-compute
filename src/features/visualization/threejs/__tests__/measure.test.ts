@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { snapToVertex } from '../measure';
+import { snapToVertex, makeFormatter } from '../measure';
 
 const SCREEN = { width: 800, height: 600 };
 
@@ -129,5 +129,24 @@ describe('snapToVertex', () => {
 
 		expect(result.x).toBeCloseTo(11, 5);
 		expect(result.y).toBeCloseTo(1, 5);
+	});
+});
+
+describe('makeFormatter', () => {
+	// Scene distances are in meters; the formatter converts to the model unit.
+	it('defaults to meters', () => {
+		expect(makeFormatter()(1.5)).toBe('1.50 m');
+	});
+
+	it('converts meters to millimeters', () => {
+		expect(makeFormatter('Millimeters')(0.025)).toBe('25.0 mm');
+	});
+
+	it('converts meters to feet', () => {
+		expect(makeFormatter('Feet')(1)).toBe('3.28 ft');
+	});
+
+	it('falls back to meters for an unknown unit', () => {
+		expect(makeFormatter('Furlongs')(2)).toBe('2.00 m');
 	});
 });

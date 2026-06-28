@@ -90,21 +90,6 @@ export interface DisplayBatch {
 export type MeshBatch = DisplayBatch;
 
 /**
- * Decoded geometry payload from a binary mesh batch blob.
- *
- * For int16 batches the parser also exposes `origin` and `scale` so the consumer can either
- * dequantize on the GPU (via `BufferAttribute(arr, 3, true)` + a per-mesh transform matrix) or
- * dequantize on the CPU as needed. For float32 batches `origin = (0,0,0)` and `scale = (1,1,1)`.
- */
-export interface DecompressedMeshData {
-	flags: number;
-	vertices: Int16Array | Float32Array;
-	indices: Uint32Array;
-	origin: [number, number, number];
-	scale: [number, number, number];
-}
-
-/**
  * Options for parsing mesh batch data.
  */
 export interface MeshBatchParsingOptions {

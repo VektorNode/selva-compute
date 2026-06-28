@@ -372,4 +372,11 @@ describe('TreeBuilder — path string parsing', () => {
 		expect(TreeBuilder.parsePathString('garbage')).toEqual([0]);
 		expect(TreeBuilder.parsePathString('{abc}')).toEqual([0]);
 	});
+
+	it('rejects empty path segments instead of producing phantom zeros', () => {
+		// `{0;}`.split(';').map(Number) would be [0, 0] — these must hit the fallback.
+		expect(TreeBuilder.parsePathString('{0;}')).toEqual([0]);
+		expect(TreeBuilder.parsePathString('{;}')).toEqual([0]);
+		expect(TreeBuilder.parsePathString('{0;;1}')).toEqual([0]);
+	});
 });

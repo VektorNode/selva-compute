@@ -14,6 +14,7 @@ This narrows the published surface to the high-level client/scheduler/IO APIs an
 - The `normalizeDefault` schema-only wrapper — internal callers use `normalizeDefaultWithWarning`.
 - `camelcaseKeys` / `toCamelCase` (core string utils) — the IO layer reads fields case-insensitively via `readField` now; the old deep-camelCasing approach was removed and these had no remaining callers.
 - `zipArgs` (core util) and `decodeBase64ToString` (core encoding util) — internal, unused, never re-exported.
+- `DecompressedMeshData` type (visualization) — unused, stale (its `indices` type didn't match the parser); use `ParsedBinaryMeshBatch`.
 
 **Removed from the public API (still used internally; import the high-level API instead):**
 

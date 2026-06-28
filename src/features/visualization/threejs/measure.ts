@@ -44,9 +44,15 @@ export interface MeasureOptions {
 	/** CSS class applied to the distance label, for styling. */
 	labelClassName?: string;
 	/**
+	 * The model's unit (pass `data.modelunits`). The scene is in meters, so the default formatter
+	 * converts and labels in this unit — e.g. a mm model reads "25.0 mm", not "0.025 m". Defaults
+	 * to meters. Ignored when a custom `format` is supplied.
+	 */
+	displayUnit?: string;
+	/**
 	 * Format the measurement → label text. Receives the straight-line `distance` and the per-axis
-	 * `delta` (|b − a| on each axis). May return multi-line text or HTML; the default renders the
-	 * total plus a Δx/Δy/Δz breakdown. Old `(distance) => string` callbacks remain valid.
+	 * `delta` (|b − a| on each axis), both in **meters**. May return multi-line text or HTML; the
+	 * default renders the total plus a Δx/Δy/Δz breakdown in `displayUnit`. Overrides `displayUnit`.
 	 */
 	format?: (distance: number, delta: THREE.Vector3) => string;
 }
@@ -64,9 +70,29 @@ const DEFAULT_COLOR = 0xffcc00;
 // Line/Points raycast threshold as a fraction of the view distance (camera→target). ~1.5% gives a
 // comfortable few-pixel grab band at typical framing without snapping to far-off geometry.
 const LINE_PICK_FRACTION = 0.015;
-const fmt = (n: number) => `${n.toPrecision(3)} m`;
-const defaultFormat = (d: number, delta: THREE.Vector3) =>
-	`${fmt(d)}\nΔx ${fmt(delta.x)}  Δy ${fmt(delta.y)}  Δz ${fmt(delta.z)}`;
+
+/**
+ * Scene geometry is loaded in meters (the webdisplay parser scales to meters when
+ * `allowScaling` is on), so distances come out in meters. To label in the model's
+ * own unit, convert with `metersPerUnit` and append `suffix`. Keep this in sync
+ * with the webdisplay parser's SCALE_FACTORS.
+ */
+const UNIT_DISPLAY: Record<string, { metersPerUnit: number; suffix: string }> = {
+	Millimeters: { metersPerUnit: 1 / 1000, suffix: 'mm' },
+	Centimeters: { metersPerUnit: 1 / 100, suffix: 'cm' },
+	Meters: { metersPerUnit: 1, suffix: 'm' },
+	Inches: { metersPerUnit: 1 / 39.37, suffix: 'in' },
+	Feet: { metersPerUnit: 1 / 3.28084, suffix: 'ft' }
+};
+
+/**
+ * Build a `meters → label` formatter for the given display unit (defaults to meters).
+ * @internal exported for tests
+ */
+export function makeFormatter(displayUnit?: string): (n: number) => string {
+	const unit = (displayUnit && UNIT_DISPLAY[displayUnit]) || UNIT_DISPLAY.Meters;
+	return (meters: number) => `${(meters / unit.metersPerUnit).toPrecision(3)} ${unit.suffix}`;
+}
 
 /**
  * The vertex indices to consider snapping to for a given hit, by object type:
@@ -141,6 +167,9 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 	const { canvas, scene, getActiveCamera, labelLayer, options = {} } = deps;
 	const snapPixels = options.snapPixels ?? DEFAULT_SNAP_PIXELS;
 	const color = new THREE.Color(options.color ?? DEFAULT_COLOR);
+	const fmt = makeFormatter(options.displayUnit);
+	const defaultFormat = (d: number, delta: THREE.Vector3) =>
+		`${fmt(d)}\nΔx ${fmt(delta.x)}  Δy ${fmt(delta.y)}  Δz ${fmt(delta.z)}`;
 	const format = options.format ?? defaultFormat;
 
 	const raycaster = new THREE.Raycaster();
@@ -255,8 +284,9 @@ export function createMeasureTool(deps: MeasureDeps): MeasureTool {
 		// click. Scale the threshold with the view size (camera distance to the orbit target, here the
 		// origin) so the pick tolerance stays roughly constant on screen as the user zooms.
 		const viewScale = camera.position.length();
-		raycaster.params.Line = { threshold: viewScale * LINE_PICK_FRACTION };
-		raycaster.params.Points = { threshold: viewScale * LINE_PICK_FRACTION };
+		const threshold = viewScale * LINE_PICK_FRACTION;
+		raycaster.params.Line!.threshold = threshold;
+		raycaster.params.Points!.threshold = threshold;
 
 		const hits = raycaster
 			.intersectObjects(scene.children, true)

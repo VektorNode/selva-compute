@@ -128,6 +128,30 @@ describe('SolveScheduler', () => {
 			expect(onSuperseded).toHaveBeenCalledTimes(1);
 		});
 
+		it('does not fire an error onSettle for a superseded in-flight solve', async () => {
+			const { executor, queue } = deferredExecutor();
+			const onSettle = vi.fn();
+			const scheduler = new SolveScheduler(executor, baseConfig, {
+				mode: 'latest-wins',
+				onSettle
+			});
+
+			// First goes in-flight, then a newer call supersedes + aborts it.
+			scheduler.solve('def', [{ ParamName: 'x', InnerTree: {} } as any]).catch(() => {});
+			const last = scheduler.solve('def', [{ ParamName: 'y', InnerTree: {} } as any]);
+
+			// Let the aborted first run its catch/finally, then complete the second.
+			await vi.waitFor(() => expect(queue.length).toBe(2));
+			queue[1].release(makeResponse('y'));
+			await expect(last).resolves.toMatchObject({ filename: 'y' });
+
+			// onSettle must fire exactly once (the success), never an error settle for
+			// the superseded solve — that was the duplicate-hook bug.
+			const errorSettles = onSettle.mock.calls.filter((c) => c[1]?.status === 'error');
+			expect(errorSettles).toHaveLength(0);
+			expect(onSettle).toHaveBeenCalledTimes(1);
+		});
+
 		it('rejects superseded calls with ErrorCodes.SUPERSEDED', async () => {
 			const { executor } = deferredExecutor();
 			const scheduler = new SolveScheduler(executor, baseConfig, { mode: 'latest-wins' });
