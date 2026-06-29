@@ -4,5 +4,9 @@
   "initialVersions": {
     "@selvajs/compute": "2.6.0"
   },
-  "changesets": []
+  "changesets": [
+    "persist-user-geometry",
+    "single-scale-home",
+    "slim-public-api"
+  ]
 }
