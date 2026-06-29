@@ -6,6 +6,7 @@
   },
   "changesets": [
     "persist-user-geometry",
+    "restore-camelcase-exports",
     "single-scale-home",
     "slim-public-api"
   ]

@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 3.0.0-beta.1
+
+### Patch Changes
+
+- 90d95c7: Re-export `camelcaseKeys` and `toCamelCase` from `@selvajs/compute/core`. These string utilities were removed in the public-API slim-down, but downstream consumers (e.g. `@selvajs/selva`) still import them, breaking their build.
+
 ## 3.0.0-beta.0
 
 ### Major Changes
