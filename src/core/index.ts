@@ -63,6 +63,9 @@ export type { ErrorCode } from './errors';
 export type { Logger } from './utils/logger';
 export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
+// String utilities
+export { toCamelCase, camelcaseKeys } from './utils/camel-case';
+
 // Configuration
 export type { ComputeConfig, RhinoModelUnit, RetryPolicy, ServerTiming } from './types';
 
