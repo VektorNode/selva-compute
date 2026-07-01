@@ -120,7 +120,7 @@
 		"prettier-plugin-svelte": "^4.1.0",
 		"prettier-plugin-tailwindcss": "^0.8.0",
 		"svelte": "^5.53.7",
-		"three": "^0.184.0",
+		"three": "^0.185.1",
 		"tsup": "^8.5.1",
 		"typedoc": "^0.28.17",
 		"typedoc-plugin-extras": "^4.0.1",
