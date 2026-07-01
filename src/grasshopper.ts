@@ -14,10 +14,11 @@
  *
  * @example Low-level usage
  * ```typescript
- * import { solveGrasshopperDefinition, normalizeComputeConfig } from '@selvajs/compute/grasshopper';
+ * import { solveGrasshopperDefinition } from '@selvajs/compute/grasshopper';
  *
- * const config = normalizeComputeConfig({ serverUrl: 'http://localhost:8081' });
- * const result = await solveGrasshopperDefinition(dataTree, definition, config);
+ * const result = await solveGrasshopperDefinition(dataTree, definition, {
+ * 	serverUrl: 'http://localhost:8081'
+ * });
  * ```
  *
  * @module grasshopper
@@ -34,14 +35,13 @@ export type { SolveOptions } from './features/grasshopper';
 // SCHEDULER (Robust scheduling for solves — sliders, queues, caching)
 // ============================================================================
 
-export { SolveScheduler, hashSolveInput } from './features/grasshopper';
+export { SolveScheduler } from './features/grasshopper';
 export type {
 	SchedulerMode,
 	CacheOptions,
 	SolveSchedulerOptions,
 	SolveContext,
-	SolveResult,
-	SolveExecutor
+	SolveResult
 } from './features/grasshopper';
 
 // ============================================================================

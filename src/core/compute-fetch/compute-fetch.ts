@@ -326,11 +326,19 @@ async function handleResponse(
 		// classifying the error (see throwHttpError → mapServerErrorCode).
 		let serverCode: string | undefined;
 
+		// The machine code (e.g. `definition_not_cached`) can ride any error status,
+		// not just 500, and must outrank the status-based mapping — so read it here.
+		try {
+			const parsedForCode = JSON.parse(errorBody);
+			if (typeof parsedForCode?.code === 'string') serverCode = parsedForCode.code;
+		} catch {
+			// Non-JSON body — nothing to extract.
+		}
+
 		// Check if it's a valid compute response with errors/warnings
 		if (response.status === 500) {
 			try {
 				const parsed = JSON.parse(errorBody);
-				if (typeof parsed?.code === 'string') serverCode = parsed.code;
 				// If it has values, it's a partial success with errors
 				if (parsed?.values && (parsed.errors || parsed.warnings)) {
 					if (debug) {
@@ -471,7 +479,12 @@ async function attemptFetch(
 
 		if (isRetryableStatus && attempt < totalAttempts - 1) {
 			const retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
-			const delayMs = retryAfterMs ?? backoffDelay(attempt, retryPolicy);
+			// Clamp Retry-After to maxDelayMs so a bad header can't force an
+			// arbitrarily long sleep. backoffDelay already clamps.
+			const delayMs =
+				retryAfterMs !== null
+					? Math.min(retryAfterMs, retryPolicy.maxDelayMs)
+					: backoffDelay(attempt, retryPolicy);
 			// Drain the body so the connection can be reused on the next attempt.
 			// On the *final* attempt we deliberately fall through — handleResponse
 			// reads the body itself to surface the error context.

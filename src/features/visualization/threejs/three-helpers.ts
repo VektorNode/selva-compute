@@ -173,8 +173,12 @@ export function computeCombinedBoundingBox(meshes: THREE.Object3D[]): THREE.Box3
 
 /**
  * `userData.id`s of scene infrastructure that is created once at init and must survive content
- * updates: the floor, the grid, and the CSS2D label layer's group. Content (meshes/lines/points)
- * carries no such id and is cleared on every solve.
+ * updates: the floor, the grid, and the CSS2D label layer's group. Compute content
+ * (meshes/lines/points) carries no such id and is cleared on every solve.
+ *
+ * A second persistence mechanism exists alongside this one: objects tagged `userData.source ===
+ * 'user'` (added via the viewer's `addUserGeometry`) also survive solves — see {@link clearScene}.
+ * Use that for user-drawn geometry; this set is reserved for init-time viewer infrastructure.
  */
 const PERSISTENT_SCENE_IDS = new Set(['floor', 'grid', 'label-layer']);
 
@@ -196,6 +200,10 @@ function clearScene(scene: THREE.Scene): void {
 		// orphans it, so labels created afterwards never render (the CSS2D renderer walks the live
 		// scene and never finds them).
 		if (PERSISTENT_SCENE_IDS.has(object.userData.id)) return;
+
+		// User-drawn geometry (added via the viewer's addUserGeometry, tagged source==='user')
+		// persists across solves so it isn't lost when compute content is replaced.
+		if (object.userData.source === 'user') return;
 
 		// Recursively dispose all renderable objects (meshes, lines, points) in this subtree.
 		object.traverse((child) => {

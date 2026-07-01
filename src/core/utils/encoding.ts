@@ -1,5 +1,10 @@
 import { RhinoComputeError, ErrorCodes } from '../errors';
-import { getLogger } from './logger';
+
+/** Node's `Buffer` when present (faster path), else `undefined` in browsers/workers. */
+function getNodeBuffer(): typeof Buffer | undefined {
+	const buf = (globalThis as { Buffer?: typeof Buffer }).Buffer;
+	return typeof buf === 'function' ? buf : undefined;
+}
 
 /**
  * Encodes a string to base64 (Node 20+ safe)
@@ -10,27 +15,12 @@ import { getLogger } from './logger';
  * @returns Base64 encoded string
  */
 export function encodeStringToBase64(str: string): string {
-	if (typeof (globalThis as any).Buffer === 'function') {
-		return (globalThis as any).Buffer.from(str, 'utf-8').toString('base64');
+	const Buffer = getNodeBuffer();
+	if (Buffer) {
+		return Buffer.from(str, 'utf-8').toString('base64');
 	}
 	// Browser/worker fallback: UTF-8 encode, then reuse the byte-array encoder.
 	return base64ByteArray(new TextEncoder().encode(str));
-}
-
-/**
- * Decodes a base64 string to a UTF-8 string (Node 20+ safe)
- *
- * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
- *
- * @param base64Str - Base64 encoded string
- * @returns Decoded UTF-8 string
- */
-export function decodeBase64ToString(base64Str: string): string {
-	if (typeof (globalThis as any).Buffer === 'function') {
-		return (globalThis as any).Buffer.from(base64Str, 'base64').toString('utf-8');
-	}
-	// Browser/worker fallback: decode to bytes, then UTF-8 decode.
-	return new TextDecoder('utf-8').decode(decodeBase64ToBinary(base64Str));
 }
 
 /**
@@ -60,8 +50,9 @@ export function isBase64(str: string): boolean {
 export function decodeBase64ToBinary(base64File: string): Uint8Array {
 	// Prefer Buffer in Node — it's faster and avoids the latin-1 string detour
 	// that atob + charCodeAt requires.
-	if (typeof (globalThis as any).Buffer === 'function') {
-		const buf = (globalThis as any).Buffer.from(base64File, 'base64');
+	const Buffer = getNodeBuffer();
+	if (Buffer) {
+		const buf = Buffer.from(base64File, 'base64');
 		return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 	}
 	if (typeof globalThis.atob === 'function') {
@@ -89,8 +80,9 @@ export function decodeBase64ToBinary(base64File: string): Uint8Array {
  * back to `btoa` over a latin-1 string in browsers/workers.
  */
 export function base64ByteArray(bytes: Uint8Array): string {
-	if (typeof (globalThis as any).Buffer === 'function') {
-		return (globalThis as any).Buffer.from(bytes).toString('base64');
+	const Buffer = getNodeBuffer();
+	if (Buffer) {
+		return Buffer.from(bytes).toString('base64');
 	}
 	if (typeof globalThis.btoa === 'function') {
 		// Build a latin-1 string in chunks to avoid blowing the call stack on
@@ -98,7 +90,9 @@ export function base64ByteArray(bytes: Uint8Array): string {
 		const CHUNK = 0x8000;
 		let s = '';
 		for (let i = 0; i < bytes.length; i += CHUNK) {
-			s += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
+			// A Uint8Array subarray is array-like, so pass it straight to
+			// fromCharCode.apply — no need to copy it into a plain Array first.
+			s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
 		}
 		return globalThis.btoa(s);
 	}
@@ -107,49 +101,4 @@ export function base64ByteArray(bytes: Uint8Array): string {
 		ErrorCodes.INVALID_STATE,
 		{ context: { environmentInfo: 'btoa or Buffer not available' } }
 	);
-}
-
-/**
- * Convert base64 string to rhino object
- *
- * @internal Internal helper for decoding Rhino objects — not public API.
- *
- * Source: https://github.com/mcneel/compute.rhino3d.appserver/blob/92c95a3b1d076a4d4a5360214ffd27c46425ff03/src/examples/convert/scriptjs
- * @param rhino is the rhino module form rhino3dm. Since not properly typed its not used here.
- * @param item
- * @returns
- */
-export function base64ToRhinoObject(
-	rhino: any,
-	item: {
-		type: string;
-		data: string;
-	}
-) {
-	//Make a type definition for this?
-	let decodata: object;
-	try {
-		decodata = JSON.parse(item.data);
-	} catch (error) {
-		decodata = item;
-		getLogger().warn('Failed to parse JSON, returning original data:', error, item);
-	}
-	if (item.type === 'System.String') {
-		try {
-			return rhino.DracoCompression.decompressBase64String(decodata);
-		} catch (error) {
-			getLogger().error('Failed to decompress Draco base64 string:', error);
-		}
-	} else if (
-		typeof decodata === 'object' &&
-		Object.prototype.hasOwnProperty.call(decodata, 'opennurbs')
-	) {
-		return rhino.CommonObject.decode(decodata);
-	} else if (typeof decodata === 'object') {
-		try {
-			return rhino.CommonObject.decode(decodata);
-		} catch (error) {
-			getLogger().error('Failed to decode Rhino object:', error);
-		}
-	}
 }

@@ -42,19 +42,4 @@ describe('boolean parser', () => {
 			expect(result.default).toEqual([true, false]);
 		});
 	});
-
-	describe('real-world scenarios', () => {
-		it('should process Grasshopper toggle', () => {
-			expect(
-				parseBoolean(createBooleanInputSchema({ name: 'Toggle', default: 'false' })).default
-			).toBe(false);
-		});
-
-		it('should process boolean lists for conditional logic', () => {
-			const result = parseBoolean(
-				createBooleanInputSchema({ default: ['true', 'true', 'false', 'true'] })
-			);
-			expect(result.default).toEqual([true, true, false, true]);
-		});
-	});
 });

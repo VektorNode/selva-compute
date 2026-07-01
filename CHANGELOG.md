@@ -1,5 +1,59 @@
 # @selvajs/compute
 
+## 3.0.0-beta.1
+
+### Patch Changes
+
+- 90d95c7: Re-export `camelcaseKeys` and `toCamelCase` from `@selvajs/compute/core`. These string utilities were removed in the public-API slim-down, but downstream consumers (e.g. `@selvajs/selva`) still import them, breaking their build.
+
+## 3.0.0-beta.0
+
+### Major Changes
+
+- 98f1c8d: Give the webdisplay orchestrator sole ownership of unit→scale, and remove the `scaleFactor` option from `parseMeshBatchObject` and `parseMeshBatchBlob`.
+
+  `scaleFactor` was applied in two places: the batch parsers scaled meshes when `scaleFactor !== 1`, _and_ the webdisplay orchestrator independently re-scaled the returned meshes from `modelunits`. The real extraction path goes through the orchestrator, which never passed `scaleFactor` into the parsers — so the in-parser knob was dead on that path, but a caller using `parseMeshBatchObject`/`Blob` directly _and_ the orchestrator would double-scale.
+
+  Unit scaling is a model-level concern that only the orchestrator can source (it owns `modelunits`), so it is now the single scaling home. The `scaleFactor?` option is removed from both parsers; they always emit identity-scaled meshes. The orchestrator's behavior (`getThreeMeshesFromComputeResponse`) is unchanged.
+
+  **Migration:** callers using `parseMeshBatchObject`/`parseMeshBatchBlob` directly with a `scaleFactor` should scale the returned meshes themselves (`mesh.scale.set(s, s, s)`), or go through `getThreeMeshesFromComputeResponse`, which derives the scale from `modelunits`.
+
+- 98f1c8d: Slim the public API surface: remove dead exports and internalize plumbing that was never part of the intended public API.
+
+  This narrows the published surface to the high-level client/scheduler/IO APIs and the documented extension seams. The internal implementation is unchanged — the removed symbols still exist as module-internal code where the library uses them; they're just no longer re-exported.
+
+  **Removed entirely (dead — no callers anywhere):**
+  - `base64ToRhinoObject` (core util) — unused internal decode helper.
+  - `getValueByParamName` / `getValueByParamId` methods on `GrasshopperResponseProcessor` — deprecated; use `getValue({ byName })` / `getValue({ byId })`.
+  - `Values` and `ProcessedDataItem` types — unused.
+  - The `normalizeDefault` schema-only wrapper — internal callers use `normalizeDefaultWithWarning`.
+  - `camelcaseKeys` / `toCamelCase` (core string utils) — the IO layer reads fields case-insensitively via `readField` now; the old deep-camelCasing approach was removed and these had no remaining callers.
+  - `zipArgs` (core util) and `decodeBase64ToString` (core encoding util) — internal, unused, never re-exported.
+  - `DecompressedMeshData` type (visualization) — unused, stale (its `indices` type didn't match the parser); use `ParsedBinaryMeshBatch`.
+
+  **Removed from the public API (still used internally; import the high-level API instead):**
+  - Hashing internals: `hashSolveInput`, `hashDefinition`, `stableStringify`, `fnv1a`, `fnv1aBytes` — the `SolveScheduler` handles caching for you.
+  - Scheduler wiring types: `SolveExecutor`, `CacheKeyExecutor`.
+  - Decoder engine: `decodeRhinoGeometry`, `decodeRhinoObject`, `DecodeRhinoOptions` — the public extension seam remains `registerDecoder`.
+  - IO/input plumbing: `processInputWithError` (use `processInput` / `processInputsWithErrors`), `extractFileData` (use `extractFilesFromComputeResponse` / `downloadFileData`).
+
+  **Unchanged / still public:** `GrasshopperClient`, `GrasshopperResponseProcessor`, `SolveScheduler` (+ `SolveResult`/`SolveContext`/`SolveSchedulerOptions`/`SchedulerMode`/`CacheOptions`), `processInput`/`processInputs`/`processInputsWithErrors`, `solveGrasshopperDefinition`, `fetchDefinitionIO`/`fetchParsedDefinitionIO`, `getValue`/`getValues`, `registerDecoder`, `TreeBuilder`, the file-handling helpers, `ComputeServerStats`, and the full visualization toolkit.
+
+### Minor Changes
+
+- 603abe0: Add viewer support for caller-owned geometry that persists across solves, and mark compute geometry with a source tag.
+
+  Previously every object in the scene except viewer infrastructure (`floor`/`grid`/`label-layer`) was cleared on each `updateScene` solve, so anything a caller added directly via `scene.add` was disposed on the next update. There was also no way to tell compute-generated geometry apart from other objects in the scene.
+
+  Two additive changes:
+  - Compute geometry now carries `userData.source = 'compute'` — meshes (merged and individual), curves, and points. Useful for picking, filtering, and debugging.
+  - Three new viewer methods on the `initThree` return:
+    - `addUserGeometry(object)` — tags the object `userData.source = 'user'` and adds it to the scene. User geometry persists across `updateScene` solves instead of being cleared with compute content, and is framed as normal content by fit-to-view.
+    - `removeUserGeometry(object)` — removes a single user object and disposes its geometry/materials.
+    - `clearUserGeometry()` — removes and disposes all user-added geometry.
+
+  Non-breaking: existing call sites are unaffected, and nothing is tagged `'user'` until `addUserGeometry` is called.
+
 ## 2.6.0
 
 ### Minor Changes

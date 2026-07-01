@@ -63,11 +63,11 @@ export type { ErrorCode } from './errors';
 export type { Logger } from './utils/logger';
 export { setLogger, enableDebugLogging, getLogger } from './utils/logger';
 
-// Configuration
-export type { ComputeConfig, RhinoModelUnit, RetryPolicy, ServerTiming } from './types';
-
 // String utilities
 export { toCamelCase, camelcaseKeys } from './utils/camel-case';
+
+// Configuration
+export type { ComputeConfig, RhinoModelUnit, RetryPolicy, ServerTiming } from './types';
 
 // ============================================================================
 // FILE HANDLING (generic zip / base64 / download — not Grasshopper-specific)

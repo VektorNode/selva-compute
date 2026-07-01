@@ -55,6 +55,16 @@ export const initThree = function (
 	dispose: () => void;
 	fitToView: () => void;
 	clearSelection: () => void;
+	/**
+	 * Add caller-owned geometry (lines, annotations, construction aids) to the scene. The object is
+	 * tagged `userData.source = 'user'` so it persists across `updateScene` solves instead of being
+	 * cleared with compute content. It is treated as normal content for fit-to-view framing.
+	 */
+	addUserGeometry: (object: THREE.Object3D) => void;
+	/** Remove a single user-added object and dispose its geometry/materials. */
+	removeUserGeometry: (object: THREE.Object3D) => void;
+	/** Remove and dispose all user-added geometry (every object tagged `source === 'user'`). */
+	clearUserGeometry: () => void;
 } {
 	const config = applyDefaults(options || {});
 
@@ -133,6 +143,7 @@ export const initThree = function (
 						snapPixels: config.measure.snapPixels,
 						color: config.measure.color,
 						labelClassName: config.measure.labelClassName,
+						displayUnit: config.measure.displayUnit,
 						format: config.measure.format
 					}
 				})
@@ -257,6 +268,40 @@ export const initThree = function (
 	// geometry later (via updateScene) should call updateShadowBounds again afterwards.
 	updateShadowBounds();
 
+	// Dispose one object's renderable resources (geometry + materials), recursing into children so
+	// Groups of lines/points clean up fully.
+	const disposeObjectTree = (root: THREE.Object3D) => {
+		root.traverse((object) => {
+			const renderable = object as Partial<THREE.Mesh> & THREE.Object3D;
+			if (!renderable.geometry && !renderable.material) return;
+			renderable.geometry?.dispose();
+			if (Array.isArray(renderable.material)) {
+				renderable.material.forEach((material) => material.dispose());
+			} else {
+				renderable.material?.dispose();
+			}
+		});
+	};
+
+	const addUserGeometry = (object: THREE.Object3D) => {
+		object.userData.source = 'user';
+		scene.add(object);
+	};
+
+	const removeUserGeometry = (object: THREE.Object3D) => {
+		object.removeFromParent();
+		disposeObjectTree(object);
+	};
+
+	const clearUserGeometry = () => {
+		// Snapshot first — removeFromParent mutates scene.children during iteration.
+		const userObjects = scene.children.filter((child) => child.userData.source === 'user');
+		userObjects.forEach((object) => {
+			object.removeFromParent();
+			disposeObjectTree(object);
+		});
+	};
+
 	const dispose = () => {
 		disposeAnimation();
 		eventHandlers.dispose();
@@ -287,6 +332,12 @@ export const initThree = function (
 				renderable.material?.dispose();
 			}
 		});
+
+		// Scene-level textures the traversal above can't reach.
+		scene.environment?.dispose();
+		if (scene.background instanceof THREE.Texture) {
+			scene.background.dispose();
+		}
 	};
 
 	return {
@@ -303,7 +354,10 @@ export const initThree = function (
 		updateShadowBounds,
 		dispose,
 		fitToView: eventHandlers.fitToView,
-		clearSelection: eventHandlers.clearSelection
+		clearSelection: eventHandlers.clearSelection,
+		addUserGeometry,
+		removeUserGeometry,
+		clearUserGeometry
 	};
 };
 
@@ -389,13 +443,13 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 		},
 		lighting: {
 			enableSunlight: options.lighting?.enableSunlight ?? true,
-			sunlightIntensity: options.lighting?.sunlightIntensity || 1,
+			sunlightIntensity: options.lighting?.sunlightIntensity ?? 1,
 			// Sun overhead in a Z-up scene: height on +Z, offset across X/Y.
 			sunlightPosition:
 				options.lighting?.sunlightPosition ||
 				new THREE.Vector3(defaults.lightDistance, defaults.lightDistance, defaults.lightHeight),
 			ambientLightColor: options.lighting?.ambientLightColor || new THREE.Color(0x404040),
-			ambientLightIntensity: options.lighting?.ambientLightIntensity || 1,
+			ambientLightIntensity: options.lighting?.ambientLightIntensity ?? 1,
 			sunlightColor: options.lighting?.sunlightColor || 0xffffff // Default to white sunlight
 		},
 		environment: {
@@ -409,8 +463,8 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			enabled: options.floor?.enabled ?? false,
 			size: options.floor?.size || defaults.floorSize,
 			color: options.floor?.color || new THREE.Color(0x808080),
-			roughness: options.floor?.roughness || 0.7,
-			metalness: options.floor?.metalness || 0.0,
+			roughness: options.floor?.roughness ?? 0.7,
+			metalness: options.floor?.metalness ?? 0.0,
 			receiveShadow: options.floor?.receiveShadow ?? true
 		},
 		render: {
@@ -419,7 +473,7 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			antialias: options.render?.antialias ?? true,
 			pixelRatio: options.render?.pixelRatio || Math.min(window.devicePixelRatio, 2),
 			toneMapping: options.render?.toneMapping || THREE.NeutralToneMapping,
-			toneMappingExposure: options.render?.toneMappingExposure || 1,
+			toneMappingExposure: options.render?.toneMappingExposure ?? 1,
 			preserveDrawingBuffer: options.render?.preserveDrawingBuffer ?? false,
 			ambientOcclusion: options.render?.ambientOcclusion ?? false,
 			aoIntensity: options.render?.aoIntensity ?? 1
@@ -463,6 +517,7 @@ function applyDefaults(options: ThreeInitializerOptions): Required<ThreeInitiali
 			snapPixels: options.measure?.snapPixels,
 			color: options.measure?.color,
 			labelClassName: options.measure?.labelClassName,
+			displayUnit: options.measure?.displayUnit,
 			format: options.measure?.format
 		},
 		events: {
@@ -846,7 +901,7 @@ function setupRenderer(
 	}
 
 	renderer.toneMapping = config.render.toneMapping!;
-	renderer.toneMappingExposure = config.render.toneMappingExposure || 1.0;
+	renderer.toneMappingExposure = config.render.toneMappingExposure ?? 1.0;
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 	renderer.sortObjects = true;

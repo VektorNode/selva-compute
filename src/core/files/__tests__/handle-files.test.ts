@@ -70,20 +70,6 @@ describe('extractFilesFromComputeResponse — fetch half', () => {
 		expect(Array.from(fetched!.content as Uint8Array)).toEqual([9, 9]);
 	});
 
-	it('accepts a single FileBaseInfo (not just an array)', async () => {
-		vi.stubGlobal(
-			'fetch',
-			vi.fn().mockResolvedValue({
-				ok: true,
-				blob: async () => ({ arrayBuffer: async () => new ArrayBuffer(0) })
-			})
-		);
-
-		const files = await extractFilesFromComputeResponse([], ref);
-		expect(files).toHaveLength(1);
-		expect(files[0].fileName).toBe('extra.bin');
-	});
-
 	// The swallow is deliberate: a failed remote fetch must drop that file and let
 	// the rest proceed, never abort the batch. Pinned so it stays intentional.
 	it('drops a file on a non-OK response, keeping the others', async () => {

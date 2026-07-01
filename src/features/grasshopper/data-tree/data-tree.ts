@@ -438,7 +438,8 @@ export class TreeBuilder {
 			getLogger().warn(`Invalid TreeBuilder path format: ${pathStr}, using [0]`);
 			return [0];
 		}
-		if (match[1] === '') return [];
+		// Root path "{}" — the (optional) capture group is undefined/empty.
+		if (!match[1]) return [];
 		return match[1].split(';').map(Number);
 	}
 

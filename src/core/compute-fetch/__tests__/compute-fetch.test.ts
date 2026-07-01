@@ -244,11 +244,11 @@ describe('fetchRhinoCompute — retry', () => {
 
 		const promise = fetchRhinoCompute('grasshopper', {}, retryCfg);
 
-		// Retry-After: 5s. Advancing less than that should NOT yet fire the retry.
-		await vi.advanceTimersByTimeAsync(1000);
+		// Retry-After 5s is clamped to the policy's maxDelayMs (100ms).
+		await vi.advanceTimersByTimeAsync(50);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 
-		await vi.advanceTimersByTimeAsync(5000);
+		await vi.advanceTimersByTimeAsync(100);
 		await expect(promise).resolves.toEqual({ ok: 'after-wait' });
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});

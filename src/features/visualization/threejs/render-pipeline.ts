@@ -73,6 +73,11 @@ export function createRenderPipeline(
 			renderPass.camera = cam;
 			gtaoPass.camera = cam;
 		},
-		dispose: () => composer.dispose()
+		// composer.dispose() doesn't free added passes — dispose them explicitly.
+		dispose: () => {
+			composer.dispose();
+			gtaoPass.dispose();
+			outputPass.dispose();
+		}
 	};
 }

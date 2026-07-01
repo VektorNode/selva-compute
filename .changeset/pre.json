@@ -1,0 +1,13 @@
+{
+  "mode": "exit",
+  "tag": "beta",
+  "initialVersions": {
+    "@selvajs/compute": "2.6.0"
+  },
+  "changesets": [
+    "persist-user-geometry",
+    "restore-camelcase-exports",
+    "single-scale-home",
+    "slim-public-api"
+  ]
+}

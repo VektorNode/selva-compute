@@ -56,20 +56,6 @@ export interface DataTree {
 	ParamName: string;
 }
 
-/**
- * Array of inner tree values (used in compute requests/responses)
- */
-export type Values = DataTree[];
-
-/**
- * Processed data item for output handling
- */
-export interface ProcessedDataItem {
-	type: string;
-	data: any;
-	path: string;
-}
-
 // ============================================================================
 // INPUT / OUTPUT PARAMETER TYPES
 // ============================================================================

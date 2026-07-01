@@ -90,7 +90,9 @@ export function hashSolveInput(definition: string | Uint8Array, dataTree: unknow
  * equal length can't share a cache key.
  */
 export function hashDefinition(definition: string | Uint8Array): string {
+	// Hash strings too (don't return the raw definition): a multi-MB base64 `.gh`
+	// would otherwise become the literal Map key in serverCacheKeys / the cache.
 	return typeof definition === 'string'
-		? definition
+		? `s:${definition.length}:${fnv1a(definition)}`
 		: `u8:${definition.length}:${fnv1aBytes(definition)}`;
 }

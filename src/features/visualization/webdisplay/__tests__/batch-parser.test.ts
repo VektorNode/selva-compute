@@ -239,23 +239,7 @@ describe('parseMeshBatchObject', () => {
 	});
 
 	describe('options', () => {
-		it('applies scaleFactor uniformly', async () => {
-			const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
-
-			const meshes = await parseMeshBatchObject(batch, {
-				mergeByMaterial: true,
-				applyTransforms: false,
-				scaleFactor: 2.5
-			});
-
-			for (const mesh of meshes) {
-				expect(mesh.scale.x).toBe(2.5);
-				expect(mesh.scale.y).toBe(2.5);
-				expect(mesh.scale.z).toBe(2.5);
-			}
-		});
-
-		it('leaves scale at 1 when scaleFactor is omitted', async () => {
+		it("leaves scale at identity — unit scaling is the orchestrator's job", async () => {
 			const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
 
 			const meshes = await parseMeshBatchObject(batch, {
@@ -318,18 +302,17 @@ describe('parseMeshBatchBlob (binary entry point)', () => {
 		expect(meshes).toHaveLength(2);
 	});
 
-	it('applies scaleFactor uniformly', async () => {
+	it("leaves scale at identity — unit scaling is the orchestrator's job", async () => {
 		const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 2, vertsPerMesh: 3 });
 		const blob = decodeBase64ToBinary(batch.compressedData);
 
 		const meshes = await parseMeshBatchBlob(blob, {
 			mergeByMaterial: true,
-			applyTransforms: false,
-			scaleFactor: 2.5
+			applyTransforms: false
 		});
 
 		for (const mesh of meshes) {
-			expect(mesh.scale.x).toBe(2.5);
+			expect(mesh.scale.x).toBe(1);
 		}
 	});
 });

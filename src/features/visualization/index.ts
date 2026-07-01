@@ -82,8 +82,7 @@ export type {
 	MaterialGroup,
 	DisplayBatch,
 	/** @deprecated Use {@link DisplayBatch}. */
-	MeshBatch,
-	DecompressedMeshData
+	MeshBatch
 } from './webdisplay/types';
 
 export type {

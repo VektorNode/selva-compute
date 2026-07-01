@@ -67,19 +67,11 @@ export async function parseMeshBatch(
  */
 export async function parseMeshBatchObject(
 	batch: DisplayBatch,
-	options?: MeshBatchParsingOptions & {
-		/** Scale factor to apply to meshes (e.g., for unit conversion) */
-		scaleFactor?: number;
-	},
+	options?: MeshBatchParsingOptions,
 	/** @internal Timings threaded from an outer entry point; not a caller option. */
 	telemetry?: ParseTelemetry
 ): Promise<THREE.Mesh[]> {
-	const {
-		mergeByMaterial = true,
-		applyTransforms = true,
-		scaleFactor = 1,
-		debug = false
-	} = options ?? {};
+	const { mergeByMaterial = true, applyTransforms = true, debug = false } = options ?? {};
 	const { parseTime = 0, perfStart = debug ? performance.now() : 0 } = telemetry ?? {};
 
 	try {
@@ -92,7 +84,6 @@ export async function parseMeshBatchObject(
 		return buildMeshesFromParsed(parsed, {
 			mergeByMaterial,
 			applyTransforms,
-			scaleFactor,
 			debug,
 			parseTime,
 			decodeTime,
@@ -124,17 +115,9 @@ export async function parseMeshBatchObject(
  */
 export async function parseMeshBatchBlob(
 	blob: ArrayBuffer | Uint8Array,
-	options?: MeshBatchParsingOptions & {
-		/** Scale factor to apply to meshes (e.g., for unit conversion) */
-		scaleFactor?: number;
-	}
+	options?: MeshBatchParsingOptions
 ): Promise<THREE.Mesh[]> {
-	const {
-		mergeByMaterial = true,
-		applyTransforms = true,
-		scaleFactor = 1,
-		debug = false
-	} = options ?? {};
+	const { mergeByMaterial = true, applyTransforms = true, debug = false } = options ?? {};
 
 	const perfStart = debug ? performance.now() : 0;
 
@@ -148,7 +131,6 @@ export async function parseMeshBatchBlob(
 		return buildMeshesFromParsed(parsed, {
 			mergeByMaterial,
 			applyTransforms,
-			scaleFactor,
 			debug,
 			parseTime: 0,
 			decodeTime,
@@ -164,7 +146,6 @@ export async function parseMeshBatchBlob(
 interface BuildOptions {
 	mergeByMaterial: boolean;
 	applyTransforms: boolean;
-	scaleFactor: number;
 	debug: boolean;
 	parseTime: number;
 	decodeTime: number;
@@ -185,7 +166,6 @@ function buildMeshesFromParsed(
 	const {
 		mergeByMaterial,
 		applyTransforms,
-		scaleFactor,
 		debug,
 		parseTime,
 		decodeTime,
@@ -205,7 +185,7 @@ function buildMeshesFromParsed(
 	const isFloat32 = (parsed.flags & FLAG_FLOAT32) !== 0;
 
 	// Dequantize once up-front into a single Float32Array. Downstream code (per-group merging,
-	// computeVertexNormals, ground-offset, scaleFactor) all expect world-unit floats, and a single
+	// computeVertexNormals, ground-offset) all expect world-unit floats, and a single
 	// linear pass over the int16 buffer is far cheaper than the legacy gunzip + base64 path. The
 	// Z-up -> Y-up rotation, when requested, is folded into the same pass.
 	const worldVertices = isFloat32
@@ -246,12 +226,6 @@ function buildMeshesFromParsed(
 				mesh.userData.sourceComponentId = sourceComponentId ?? null;
 			}
 			meshes.push(...individualMeshes);
-		}
-	}
-
-	if (scaleFactor !== 1) {
-		for (const mesh of meshes) {
-			mesh.scale.set(scaleFactor, scaleFactor, scaleFactor);
 		}
 	}
 
@@ -410,6 +384,7 @@ function createMergedMesh(
 	threeMesh.receiveShadow = true;
 
 	threeMesh.userData = {
+		source: 'compute',
 		name: threeMesh.name,
 		layer: firstMesh?.layer ?? '',
 		originalIndex: firstMesh?.originalIndex ?? 0,
@@ -462,6 +437,7 @@ function createIndividualMeshes(
 		const mesh = new THREE.Mesh(geometry, materials[group.materialId]);
 		mesh.name = meshMeta.name;
 		mesh.userData = {
+			source: 'compute',
 			name: meshMeta.name,
 			layer: meshMeta.layer ?? '',
 			originalIndex: meshMeta.originalIndex,

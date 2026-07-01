@@ -72,7 +72,11 @@ function coerceDefault<T>(
 const numericTransformer: ValueTransformer<number> = (value) => {
 	if (typeof value === 'number') return value;
 	if (typeof value === 'string') {
-		const parsed = Number(value.trim());
+		const trimmed = value.trim();
+		// `Number('')` is 0, so reject empty/whitespace before coercing — an empty
+		// default should drop to null, not silently become 0.
+		if (trimmed === '') return null;
+		const parsed = Number(trimmed);
 		return Number.isNaN(parsed) ? null : parsed;
 	}
 	return null;

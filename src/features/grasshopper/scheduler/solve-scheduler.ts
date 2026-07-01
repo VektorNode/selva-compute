@@ -82,6 +82,9 @@ interface CacheEntry {
 	insertedAt: number;
 }
 
+/** Cap on the definition→server-cache-key map so it can't grow without bound. */
+const SERVER_CACHE_KEYS_MAX = 100;
+
 interface PendingItem {
 	definition: string | Uint8Array;
 	dataTree: DataTree[];
@@ -400,7 +403,11 @@ export class SolveScheduler {
 
 	private async execute(item: PendingItem): Promise<void> {
 		const controller = new AbortController();
-		const inflight: InFlightItem = { ...item, controller };
+		// Attach the controller to the SAME object (not a spread copy) so every
+		// settle path — supersede, cancelAll, executor success/error — shares one
+		// `settled` slot. A copy would split that state and fire onSettle twice.
+		const inflight = item as InFlightItem;
+		inflight.controller = controller;
 		this.inFlight.add(inflight);
 		item.ctx.startedAt = Date.now();
 
@@ -487,9 +494,19 @@ export class SolveScheduler {
 		const result = await this.cacheKeyExecutor(definition, dataTree, knownKey, config);
 
 		// Record the server's (possibly refreshed) key for next time; drop a stale
-		// one if the server stopped returning a key.
-		if (result.cacheKey) this.serverCacheKeys.set(defKey, result.cacheKey);
-		else this.serverCacheKeys.delete(defKey);
+		// one if the server stopped returning a key. Re-set on a hit to refresh
+		// insertion order so the bounded eviction below is LRU-ish.
+		if (result.cacheKey) {
+			this.serverCacheKeys.delete(defKey);
+			this.serverCacheKeys.set(defKey, result.cacheKey);
+			while (this.serverCacheKeys.size > SERVER_CACHE_KEYS_MAX) {
+				const oldest = this.serverCacheKeys.keys().next().value;
+				if (oldest === undefined) break;
+				this.serverCacheKeys.delete(oldest);
+			}
+		} else {
+			this.serverCacheKeys.delete(defKey);
+		}
 
 		return { response: result.response, definitionReuploaded: result.missed };
 	}
