@@ -7,6 +7,7 @@ import {
 	BINARY_MESH_MAGIC,
 	BINARY_MESH_VERSION,
 	COMPRESSED_MESH_MAGIC,
+	FLAG_DELTA_ENCODED,
 	FLAG_FLOAT32,
 	FLAG_UINT16_INDICES,
 	parseBinaryMeshBatch
@@ -29,6 +30,7 @@ describe('parseBinaryMeshBatch', () => {
 			const parsed = parseBinaryMeshBatch(blob);
 
 			expect(parsed.flags & FLAG_FLOAT32).toBe(0);
+			expect(parsed.flags & FLAG_DELTA_ENCODED).toBe(FLAG_DELTA_ENCODED);
 			expect(parsed.vertices).toBeInstanceOf(Int16Array);
 			expect(parsed.indices.length).toBe(indices.length);
 
@@ -103,6 +105,30 @@ describe('parseBinaryMeshBatch', () => {
 			expect(parsed.flags & FLAG_UINT16_INDICES).toBe(0);
 			expect(parsed.indices).toBeInstanceOf(Uint32Array);
 			expect(Array.from(parsed.indices)).toEqual([0, 1, 65536]);
+		});
+
+		it('roundtrips extreme quantized jumps through the delta filter', () => {
+			// X alternates across the full bbox, so quantized values swing between -32767 and +32767
+			// and per-component deltas (±65534) exceed int16 — exercising the wrapping arithmetic.
+			// Index jumps are similarly non-local.
+			const vertices = new Float32Array([0, 0, 0, 10, 10, 10, 0, 0, 0, 10, 0, 10]);
+			const indices = new Uint32Array([0, 3, 1, 3, 0, 2]);
+
+			const blob = encodeBatchPayload(vertices, indices, EMPTY_METADATA);
+			const parsed = parseBinaryMeshBatch(blob);
+
+			expect(parsed.flags & FLAG_DELTA_ENCODED).toBe(FLAG_DELTA_ENCODED);
+			expect(Array.from(parsed.indices)).toEqual([0, 3, 1, 3, 0, 2]);
+
+			const q = parsed.vertices as Int16Array;
+			for (let i = 0; i < q.length; i += 3) {
+				const wx = parsed.origin[0] + (q[i]! + 32767) * parsed.scale[0];
+				const wy = parsed.origin[1] + (q[i + 1]! + 32767) * parsed.scale[1];
+				const wz = parsed.origin[2] + (q[i + 2]! + 32767) * parsed.scale[2];
+				expect(wx).toBeCloseTo(vertices[i]!, 3);
+				expect(wy).toBeCloseTo(vertices[i + 1]!, 3);
+				expect(wz).toBeCloseTo(vertices[i + 2]!, 3);
+			}
 		});
 
 		it('handles empty geometry', () => {
@@ -269,6 +295,51 @@ describe('parseBinaryMeshBatch', () => {
 			expect(parsed.indices).toBeInstanceOf(Uint32Array);
 			expect(Array.from(parsed.indices)).toEqual([0, 1, 2]);
 			expect(Array.from(parsed.vertices as Float32Array)).toEqual(verts);
+		});
+
+		it('still decodes a v2 blob (absolute int16 verts + uint16 indices, no delta flag)', () => {
+			// v2 predates the delta filter: quantized components and indices are stored as absolute
+			// values. Hand-build one to pin back-compat for persisted .gh params and DMF files.
+			const metadata = utf8('{"materials":[],"groups":[]}');
+			const quantized = [-32767, -32767, -32767, 32767, 32767, 32767, 0, 0, 0];
+			const indices = [0, 1, 2];
+			const total =
+				12 + metadata.length + 4 + 48 + 4 + quantized.length * 2 + 4 + indices.length * 2;
+			const buf = new ArrayBuffer(total);
+			const view = new DataView(buf);
+			const u8 = new Uint8Array(buf);
+			let o = 0;
+			view.setUint32(o, BINARY_MESH_MAGIC, true);
+			o += 4;
+			view.setUint32(o, 2, true); // version 2
+			o += 4;
+			view.setUint32(o, metadata.length, true);
+			o += 4;
+			u8.set(metadata, o);
+			o += metadata.length;
+			view.setUint32(o, FLAG_UINT16_INDICES, true); // int16 verts, uint16 indices, no delta
+			o += 4;
+			for (let i = 0; i < 6; i++) {
+				view.setFloat64(o, i < 3 ? 0 : 1, true); // origin (0,0,0), scale (1,1,1)
+				o += 8;
+			}
+			view.setUint32(o, quantized.length / 3, true);
+			o += 4;
+			for (const q of quantized) {
+				view.setInt16(o, q, true);
+				o += 2;
+			}
+			view.setUint32(o, indices.length, true);
+			o += 4;
+			for (const idx of indices) {
+				view.setUint16(o, idx, true);
+				o += 2;
+			}
+
+			const parsed = parseBinaryMeshBatch(buf);
+			expect(parsed.flags & FLAG_DELTA_ENCODED).toBe(0);
+			expect(Array.from(parsed.vertices as Int16Array)).toEqual(quantized);
+			expect(Array.from(parsed.indices)).toEqual(indices);
 		});
 
 		it('rejects truncated input', () => {

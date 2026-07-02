@@ -1,6 +1,7 @@
 import {
 	BINARY_MESH_MAGIC,
 	BINARY_MESH_VERSION,
+	FLAG_DELTA_ENCODED,
 	FLAG_FLOAT32,
 	FLAG_UINT16_INDICES
 } from '@/features/visualization/webdisplay/binary-parser';
@@ -217,7 +218,7 @@ export function encodeBatchPayload(
 	u8.set(metadataBytes, offset);
 	offset += metadataBytes.length;
 
-	let flags = 0;
+	let flags = FLAG_DELTA_ENCODED;
 	if (useFloat32) flags |= FLAG_FLOAT32;
 	if (useUint16Indices) flags |= FLAG_UINT16_INDICES;
 	view.setUint32(offset, flags, true);
@@ -247,10 +248,20 @@ export function encodeBatchPayload(
 		}
 		offset += verticesByteLength;
 	} else {
+		// v3 delta filter: per-component wrapped difference from the previous vertex, zigzagged.
+		let px = 0;
+		let py = 0;
+		let pz = 0;
 		for (let i = 0; i < vertices.length; i += 3) {
-			view.setInt16(offset + i * 2, quantize(vertices[i]!, originX, scaleX), true);
-			view.setInt16(offset + (i + 1) * 2, quantize(vertices[i + 1]!, originY, scaleY), true);
-			view.setInt16(offset + (i + 2) * 2, quantize(vertices[i + 2]!, originZ, scaleZ), true);
+			const qx = quantize(vertices[i]!, originX, scaleX);
+			const qy = quantize(vertices[i + 1]!, originY, scaleY);
+			const qz = quantize(vertices[i + 2]!, originZ, scaleZ);
+			view.setUint16(offset + i * 2, zigzag16(wrap16(qx - px)), true);
+			view.setUint16(offset + (i + 1) * 2, zigzag16(wrap16(qy - py)), true);
+			view.setUint16(offset + (i + 2) * 2, zigzag16(wrap16(qz - pz)), true);
+			px = qx;
+			py = qy;
+			pz = qz;
 		}
 		offset += verticesByteLength;
 	}
@@ -258,16 +269,35 @@ export function encodeBatchPayload(
 	view.setUint32(offset, faces.length, true);
 	offset += 4;
 	if (useUint16Indices) {
+		let prev = 0;
 		for (let i = 0; i < faces.length; i++) {
-			view.setUint16(offset + i * 2, faces[i]!, true);
+			view.setUint16(offset + i * 2, zigzag16(wrap16(faces[i]! - prev)), true);
+			prev = faces[i]!;
 		}
 	} else {
+		let prev = 0;
 		for (let i = 0; i < faces.length; i++) {
-			view.setUint32(offset + i * 4, faces[i]!, true);
+			view.setUint32(offset + i * 4, zigzag32(faces[i]! - prev), true);
+			prev = faces[i]!;
 		}
 	}
 
 	return uint8ToBase64(u8);
+}
+
+/** Wrap to signed 16-bit, mirroring the C# writer's `unchecked((short)(...))`. */
+function wrap16(value: number): number {
+	return (value << 16) >> 16;
+}
+
+/** Maps a signed delta to unsigned so small ± values stay small: 0,-1,1,-2 → 0,1,2,3. */
+function zigzag16(delta: number): number {
+	return ((delta << 1) ^ (delta >> 15)) & 0xffff;
+}
+
+function zigzag32(delta: number): number {
+	const d = delta | 0;
+	return ((d << 1) ^ (d >> 31)) >>> 0;
 }
 
 function quantize(value: number, origin: number, scale: number): number {

@@ -16,6 +16,12 @@ export function toCamelCase(str: string, options: { preserveSpaces?: boolean } =
 
 /**
  * Recursively converts all object keys to camelCase.
+ *
+ * @deprecated Do not use this on Rhino Compute wire payloads: deep-camelCasing
+ * corrupts user-authored keys (value-list labels, item `data` JSON). Read the
+ * specific fields you need case-insensitively with `readField`/`hasField` from
+ * `core/utils/read-field` instead. Kept only for generic non-payload use.
+ *
  * @param obj - The object to process
  * @param options - Options object
  *   - deep: If true, process deeply

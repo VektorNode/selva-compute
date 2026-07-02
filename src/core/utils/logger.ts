@@ -1,3 +1,5 @@
+import { RhinoComputeError, ErrorCodes } from '../errors';
+
 /**
  * Logger interface for structured logging
  *
@@ -64,6 +66,9 @@ export function getLogger(): Logger {
  * @public Use this to configure custom logging behavior.
  *
  * @param logger - Custom logger implementation or null to disable logging
+ * @throws {RhinoComputeError} `INVALID_CONFIG` if the logger is missing any of
+ *   the four required methods — failing here beats a confusing
+ *   "getLogger().debug is not a function" at some later, unrelated call site.
  *
  * @example
  * ```typescript
@@ -85,7 +90,23 @@ export function getLogger(): Logger {
  * ```
  */
 export function setLogger(logger: Logger | Console | null): void {
-	internalLogger = logger === null ? new NoOpLogger() : (logger as Logger);
+	if (logger === null) {
+		internalLogger = new NoOpLogger();
+		return;
+	}
+
+	const missing = (['debug', 'info', 'warn', 'error'] as const).filter(
+		(method) => typeof (logger as unknown as Record<string, unknown>)[method] !== 'function'
+	);
+	if (missing.length > 0) {
+		throw new RhinoComputeError(
+			`Logger is missing required method(s): ${missing.join(', ')}. A logger must implement debug, info, warn and error.`,
+			ErrorCodes.INVALID_CONFIG,
+			{ context: { missingMethods: missing } }
+		);
+	}
+
+	internalLogger = logger as Logger;
 }
 
 /**

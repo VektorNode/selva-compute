@@ -48,8 +48,8 @@ export default class ComputeServerStats {
 	/**
 	 * Build request headers with optional API key.
 	 */
-	private buildHeaders(): HeadersInit {
-		const headers: HeadersInit = {
+	private buildHeaders(): Record<string, string> {
+		const headers: Record<string, string> = {
 			'Content-Type': 'application/json'
 		};
 
@@ -69,7 +69,16 @@ export default class ComputeServerStats {
 		init: RequestInit = {},
 		timeoutMs: number = ComputeServerStats.DEFAULT_TIMEOUT_MS
 	): Promise<Response> {
-		const requestInit: RequestInit = { headers: this.buildHeaders(), ...init };
+		// Merge caller headers OVER the defaults instead of `{ headers: …, ...init }`,
+		// where any `init.headers` would silently replace the whole set (dropping
+		// the API key). `new Headers()` normalizes all three HeadersInit shapes.
+		const headers: Record<string, string> = this.buildHeaders();
+		if (init.headers) {
+			new Headers(init.headers).forEach((value, key) => {
+				headers[key] = value;
+			});
+		}
+		const requestInit: RequestInit = { ...init, headers };
 		if (timeoutMs > 0 && !requestInit.signal) {
 			requestInit.signal = AbortSignal.timeout(timeoutMs);
 		}

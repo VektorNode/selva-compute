@@ -17,19 +17,29 @@ export const BINARY_MESH_MAGIC = 0x41564c53;
  *   [4] magic = SLVZ, [4] uncompressedLen (uint32), [N] raw-deflate stream of the SLVA blob.
  */
 export const COMPRESSED_MESH_MAGIC = 0x5a564c53;
-/** Current writer version. v2 added the uint16-index flag (FLAG_UINT16_INDICES). */
-export const BINARY_MESH_VERSION = 2;
 /**
- * Oldest wire version this parser still decodes. v1 is layout-identical to v2 except it predates
- * the uint16-index flag — v1 always used uint32 indices, i.e. the flag is implicitly clear — so the
- * v2 flag-driven read path handles v1 blobs unchanged. Accepting it keeps persisted/cached v1 blobs
- * (saved `.gh` files, cached compute results) decodable after upgrade.
+ * Current writer version. v2 added the uint16-index flag (FLAG_UINT16_INDICES); v3 added the
+ * delta+zigzag filter flag (FLAG_DELTA_ENCODED).
+ */
+export const BINARY_MESH_VERSION = 3;
+/**
+ * Oldest wire version this parser still decodes. Each version only added a flag bit — v1 always
+ * used uint32 indices, v2 introduced uint16 indices, v3 the delta filter — so the flag-driven read
+ * path handles every older blob unchanged. Accepting them keeps persisted/cached blobs (saved `.gh`
+ * files, DMF files, cached compute results) decodable after upgrade.
  */
 export const MIN_SUPPORTED_VERSION = 1;
 /** Bit 0 of the geometry flags word: 0 = int16 quantized, 1 = float32 raw. */
 export const FLAG_FLOAT32 = 0x1;
 /** Bit 1 of the geometry flags word: 0 = uint32 indices, 1 = uint16 indices. */
 export const FLAG_UINT16_INDICES = 0x2;
+/**
+ * Bit 2 of the geometry flags word: int16 vertex components and the index stream are stored as
+ * wrapped per-component deltas from their predecessor, zigzag-mapped to unsigned (float32 vertices
+ * are never filtered). Deltas of welded meshes concentrate near zero, which makes the SLVZ DEFLATE
+ * pass compress far better. Decoding reverses the filter with a running prefix sum.
+ */
+export const FLAG_DELTA_ENCODED = 0x4;
 
 const HEADER_PREAMBLE_BYTES = 4 /* magic */ + 4 /* version */ + 4; /* metadataLen */
 const GEOMETRY_HEADER_BYTES =
@@ -55,9 +65,10 @@ export interface BinaryMeshMetadata {
 /**
  * Result of parsing a binary mesh blob.
  *
- * `vertices` and `indices` are typed-array views over the original `ArrayBuffer` — zero copies.
- * The consumer is responsible for not mutating the underlying buffer if it cares about safety,
- * or for calling `.slice()` to detach.
+ * `vertices` and `indices` hold absolute (unfiltered) values. For pre-v3 blobs they are typed-array
+ * views over the original `ArrayBuffer` — zero copies; the consumer is responsible for not mutating
+ * the underlying buffer if it cares about safety, or for calling `.slice()` to detach. Delta-encoded
+ * blobs (FLAG_DELTA_ENCODED) decode into freshly allocated arrays instead.
  */
 export interface ParsedBinaryMeshBatch {
 	metadata: BinaryMeshMetadata;
@@ -78,11 +89,12 @@ export interface ParsedBinaryMeshBatch {
  * The blob layout is:
  * ```
  *   [4]  magic        = "SLVA" (0x53 0x4C 0x56 0x41)
- *   [4]  version      = uint32 (currently 1)
+ *   [4]  version      = uint32 (currently 3)
  *   [4]  metadataLen  = uint32 byte length of UTF-8 metadata JSON
  *   [N]  metadata     = UTF-8 JSON (materials, groups, sourceComponentId, ...)
  *   [4]  flags        = uint32 (bit 0: 0 = int16 quantized, 1 = float32 raw;
- *                                bit 1: 0 = uint32 indices, 1 = uint16 indices)
+ *                                bit 1: 0 = uint32 indices, 1 = uint16 indices;
+ *                                bit 2: 1 = delta+zigzag filtered)
  *   [24] origin       = 3 x float64
  *   [24] scale        = 3 x float64 (step per int16 unit; identity for float32)
  *   [4]  vertexCount  = uint32 number of vertices (positions = vertexCount * 3 components)
@@ -96,6 +108,10 @@ export interface ParsedBinaryMeshBatch {
  * encodes `origin + scale`.
  *
  * For float32: `origin = (0, 0, 0)`, `scale = (1, 1, 1)`, vertices are raw world positions.
+ *
+ * With FLAG_DELTA_ENCODED (v3), the stored int16 vertex components and indices are wrapped
+ * differences from their predecessor, zigzag-mapped — see the flag's doc. The parser returns the
+ * reconstructed absolute values, so consumers never see the filter.
  *
  * @param input - The blob, as either an `ArrayBuffer`/`Uint8Array` (binary transport) or a
  *   base64-encoded string (today's JSON-envelope transport).
@@ -188,6 +204,7 @@ export function parseBinaryMeshBatch(
 	offset += 4;
 
 	const useFloat32 = (flags & FLAG_FLOAT32) !== 0;
+	const deltaEncoded = (flags & FLAG_DELTA_ENCODED) !== 0;
 	const componentCount = vertexCount * 3;
 	const bytesPerComponent = useFloat32 ? 4 : 2;
 	const verticesByteLength = componentCount * bytesPerComponent;
@@ -209,9 +226,17 @@ export function parseBinaryMeshBatch(
 	// that alignment in the underlying buffer — a wrapper Uint8Array could violate it. Fall back
 	// to a fresh copy if so.
 	const absoluteOffset = bytes.byteOffset + offset;
-	const verticesView = useFloat32
-		? readFloat32Vertices(bytes.buffer, absoluteOffset, componentCount)
-		: readInt16Vertices(bytes.buffer, absoluteOffset, componentCount);
+	let verticesView: Int16Array | Float32Array;
+	if (useFloat32) {
+		verticesView = readFloat32Vertices(bytes.buffer, absoluteOffset, componentCount);
+	} else if (deltaEncoded) {
+		// The raw stream holds zigzag-mapped deltas (unsigned); prefix-sum into absolute int16.
+		verticesView = decodeDeltaVertices(
+			readUint16Array(bytes.buffer, absoluteOffset, componentCount)
+		);
+	} else {
+		verticesView = readInt16Vertices(bytes.buffer, absoluteOffset, componentCount);
+	}
 	offset += verticesByteLength;
 
 	if (offset + 4 > bytes.byteLength) {
@@ -237,9 +262,15 @@ export function parseBinaryMeshBatch(
 		});
 	}
 
-	const indicesView = useUint16Indices
-		? readUint16Indices(bytes.buffer, bytes.byteOffset + offset, indexCount)
-		: readUint32Indices(bytes.buffer, bytes.byteOffset + offset, indexCount);
+	let indicesView = useUint16Indices
+		? readUint16Array(bytes.buffer, bytes.byteOffset + offset, indexCount)
+		: readUint32Array(bytes.buffer, bytes.byteOffset + offset, indexCount);
+	if (deltaEncoded) {
+		indicesView =
+			indicesView instanceof Uint16Array
+				? decodeDeltaIndices16(indicesView)
+				: decodeDeltaIndices32(indicesView);
+	}
 
 	return {
 		metadata,
@@ -349,11 +380,7 @@ function readFloat32Vertices(
 	return new Float32Array(copy.buffer);
 }
 
-function readUint16Indices(
-	buffer: ArrayBufferLike,
-	byteOffset: number,
-	count: number
-): Uint16Array {
+function readUint16Array(buffer: ArrayBufferLike, byteOffset: number, count: number): Uint16Array {
 	if (count === 0) return new Uint16Array(0);
 	if (byteOffset % 2 === 0) {
 		return new Uint16Array(buffer, byteOffset, count);
@@ -363,11 +390,7 @@ function readUint16Indices(
 	return new Uint16Array(copy.buffer);
 }
 
-function readUint32Indices(
-	buffer: ArrayBufferLike,
-	byteOffset: number,
-	count: number
-): Uint32Array {
+function readUint32Array(buffer: ArrayBufferLike, byteOffset: number, count: number): Uint32Array {
 	if (count === 0) return new Uint32Array(0);
 	if (byteOffset % 4 === 0) {
 		return new Uint32Array(buffer, byteOffset, count);
@@ -375,6 +398,52 @@ function readUint32Indices(
 	const copy = new Uint8Array(count * 4);
 	copy.set(new Uint8Array(buffer, byteOffset, count * 4));
 	return new Uint32Array(copy.buffer);
+}
+
+/** Inverse of the writer's zigzag map: 0,1,2,3 → 0,-1,1,-2. */
+function unzigzag(zz: number): number {
+	return (zz >>> 1) ^ -(zz & 1);
+}
+
+/**
+ * Undoes the v3 delta filter on the quantized vertex stream: each component is a zigzag-mapped,
+ * wrapped 16-bit difference from the previous vertex's same component (independent x/y/z running
+ * sums). `(x << 16) >> 16` reproduces the writer's int16 wrapping.
+ */
+function decodeDeltaVertices(zigzagged: Uint16Array): Int16Array {
+	const out = new Int16Array(zigzagged.length);
+	let px = 0;
+	let py = 0;
+	let pz = 0;
+	for (let i = 0; i < zigzagged.length; i += 3) {
+		px = ((px + unzigzag(zigzagged[i]!)) << 16) >> 16;
+		py = ((py + unzigzag(zigzagged[i + 1]!)) << 16) >> 16;
+		pz = ((pz + unzigzag(zigzagged[i + 2]!)) << 16) >> 16;
+		out[i] = px;
+		out[i + 1] = py;
+		out[i + 2] = pz;
+	}
+	return out;
+}
+
+function decodeDeltaIndices16(zigzagged: Uint16Array): Uint16Array {
+	const out = new Uint16Array(zigzagged.length);
+	let prev = 0;
+	for (let i = 0; i < zigzagged.length; i++) {
+		prev = (prev + unzigzag(zigzagged[i]!)) & 0xffff;
+		out[i] = prev;
+	}
+	return out;
+}
+
+function decodeDeltaIndices32(zigzagged: Uint32Array): Uint32Array {
+	const out = new Uint32Array(zigzagged.length);
+	let prev = 0;
+	for (let i = 0; i < zigzagged.length; i++) {
+		prev = (prev + unzigzag(zigzagged[i]!)) >>> 0;
+		out[i] = prev;
+	}
+	return out;
 }
 
 function fail(message: string, context: Record<string, unknown>): RhinoComputeError {

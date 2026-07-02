@@ -40,14 +40,14 @@ export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
  * @public Use this for error handling with error codes and context.
  */
 export class RhinoComputeError extends Error {
-	public readonly code: string;
+	public readonly code: ErrorCode;
 	public readonly statusCode?: number;
 	public readonly context?: Record<string, unknown>;
 	public readonly originalError?: Error;
 
 	constructor(
 		message: string,
-		code: string = 'UNKNOWN_ERROR',
+		code: ErrorCode = ErrorCodes.UNKNOWN_ERROR,
 		options?: { statusCode?: number; context?: Record<string, unknown>; originalError?: Error }
 	) {
 		super(message);

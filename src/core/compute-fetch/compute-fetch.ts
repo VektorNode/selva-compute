@@ -1,5 +1,6 @@
 import { RhinoComputeError, ErrorCodes, type ErrorCode } from '../errors';
 import { getLogger } from '../utils/logger';
+import { utf8ByteLength } from '../utils/encoding';
 
 import type { ComputeConfig, RetryPolicy, ServerTiming } from '../types';
 
@@ -133,7 +134,7 @@ function throwHttpError(
 		responseHeaders
 	};
 
-	const errorMap: Record<number, { message: string; code: string }> = {
+	const errorMap: Record<number, { message: string; code: ErrorCode }> = {
 		401: { message: `HTTP ${status}: ${statusText}${bodyHint}`, code: ErrorCodes.AUTH_ERROR },
 		403: { message: `HTTP ${status}: ${statusText}${bodyHint}`, code: ErrorCodes.AUTH_ERROR },
 		404: { message: `Endpoint not found: ${fullUrl}`, code: ErrorCodes.NETWORK_ERROR },
@@ -197,12 +198,17 @@ function buildUrl(endpoint: string, serverUrl: string): string {
 
 function isLocalhost(serverUrl: string): boolean {
 	try {
-		const host = new URL(serverUrl).host;
-		return /^(localhost|127\.0\.0\.1|::1)(:\d+)?$/i.test(host);
+		// `hostname` (not `host`) strips the port; IPv6 hostnames keep their
+		// brackets, so `http://[::1]:6500` yields `[::1]`.
+		const hostname = new URL(serverUrl).hostname.toLowerCase();
+		return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
 	} catch {
-		return /(localhost|127\.0\.0\.1)/i.test(serverUrl);
+		return /(localhost|127\.0\.0\.1|\[::1\])/i.test(serverUrl);
 	}
 }
+
+/** Server URLs already warned about missing auth — warn once per server, not per request. */
+const warnedNoAuth = new Set<string>();
 
 function buildHeaders(requestId: string, config: ComputeConfig): HeadersInit {
 	const headers: HeadersInit = {
@@ -212,9 +218,15 @@ function buildHeaders(requestId: string, config: ComputeConfig): HeadersInit {
 		...(config.apiKey && { RhinoComputeKey: config.apiKey })
 	};
 
-	if (!config.apiKey && !config.authToken && !isLocalhost(config.serverUrl)) {
+	if (
+		!config.apiKey &&
+		!config.authToken &&
+		!warnedNoAuth.has(config.serverUrl) &&
+		!isLocalhost(config.serverUrl)
+	) {
+		warnedNoAuth.add(config.serverUrl);
 		getLogger().warn(
-			`⚠️ [Rhino Compute] Request [${requestId}] targets remote server (${config.serverUrl}) but no API key or auth token is configured. Requests may fail or be rate-limited.`
+			`⚠️ [Rhino Compute] Request [${requestId}] targets remote server (${config.serverUrl}) but no API key or auth token is configured. Requests may fail or be rate-limited. (warned once per server)`
 		);
 	}
 
@@ -522,7 +534,7 @@ async function attemptFetch(
 				return {
 					ok: false,
 					retry: false,
-					cause: new RhinoComputeError('Request aborted by caller', ErrorCodes.UNKNOWN_ERROR, {
+					cause: new RhinoComputeError('Request aborted by caller', ErrorCodes.ABORTED, {
 						context: {
 							endpoint: ctx.endpoint,
 							requestId: ctx.requestId,
@@ -590,9 +602,17 @@ async function attemptFetch(
 		// Retryable only if it carries a retryable status code.
 		if (error instanceof RhinoComputeError) {
 			const status = error.statusCode;
-			const retryable =
+			// A 2xx whose body failed to parse (NETWORK_ERROR from handleResponse)
+			// means the stream was cut mid-body — as transient as any network error.
+			const isTruncatedSuccess =
+				error.code === ErrorCodes.NETWORK_ERROR &&
 				status !== undefined &&
-				(RETRYABLE_STATUS.has(status) || (retryPolicy.retryOn429 && status === 429));
+				status >= 200 &&
+				status < 300;
+			const retryable =
+				isTruncatedSuccess ||
+				(status !== undefined &&
+					(RETRYABLE_STATUS.has(status) || (retryPolicy.retryOn429 && status === 429)));
 			if (retryable && attempt < totalAttempts - 1) {
 				return {
 					ok: false,
@@ -663,7 +683,9 @@ export async function fetchRhinoCompute<R = unknown>(
 ): Promise<R> {
 	const requestId = generateRequestId();
 	const body = JSON.stringify(args);
-	const requestSize = body.length;
+	// Wire size in UTF-8 bytes — `body.length` counts UTF-16 code units and
+	// undercounts non-ASCII payloads (matters for the 413 message and size logs).
+	const requestSize = utf8ByteLength(body);
 	const fullUrl = buildUrl(endpoint, config.serverUrl);
 	const headers = buildHeaders(requestId, config);
 	const retryPolicy = resolveRetryPolicy(config.retry);
@@ -706,7 +728,7 @@ export async function fetchRhinoCompute<R = unknown>(
 			await sleep(result.delayMs, config.signal);
 		} catch {
 			// Caller cancelled during backoff
-			throw new RhinoComputeError('Request aborted by caller', ErrorCodes.UNKNOWN_ERROR, {
+			throw new RhinoComputeError('Request aborted by caller', ErrorCodes.ABORTED, {
 				context: { endpoint, requestId, requestSize },
 				originalError: lastError
 			});

@@ -1,7 +1,7 @@
 import { RhinoComputeError, ErrorCodes } from '@/core/errors';
 
-/** The public McNeel endpoint — disallowed as a `serverUrl`; users must point at their own server. */
-const DEFAULT_PUBLIC_ENDPOINT = 'https://compute.rhino3d.com/';
+/** The public McNeel endpoint's host — disallowed as a `serverUrl`; users must point at their own server. */
+const DEFAULT_PUBLIC_HOST = 'compute.rhino3d.com';
 
 /**
  * Validate and normalize a Rhino Compute `serverUrl`.
@@ -15,7 +15,8 @@ const DEFAULT_PUBLIC_ENDPOINT = 'https://compute.rhino3d.com/';
  * - non-empty (after trim)
  * - `http://` or `https://` scheme
  * - parseable by `new URL()`
- * - not the default public McNeel endpoint
+ * - not the public McNeel endpoint — compared by parsed hostname, so scheme,
+ *   casing, port, path, or trailing-slash variants can't slip past the block
  *
  * @param raw - The candidate server URL.
  * @returns The normalized URL with any trailing slashes removed.
@@ -37,8 +38,9 @@ export function validateServerUrl(raw: string): string {
 		);
 	}
 
+	let parsed: URL;
 	try {
-		new URL(raw);
+		parsed = new URL(raw);
 	} catch (err) {
 		throw new RhinoComputeError(
 			`Invalid serverUrl: "${raw}". Must be a valid URL. ` +
@@ -51,7 +53,7 @@ export function validateServerUrl(raw: string): string {
 		);
 	}
 
-	if (raw === DEFAULT_PUBLIC_ENDPOINT) {
+	if (parsed.hostname.toLowerCase() === DEFAULT_PUBLIC_HOST) {
 		throw new RhinoComputeError(
 			'serverUrl must be set to your Compute server URL. The default public endpoint is not allowed.',
 			ErrorCodes.INVALID_CONFIG,

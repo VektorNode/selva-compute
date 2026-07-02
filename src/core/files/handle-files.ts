@@ -93,9 +93,11 @@ export const downloadFileData = async (
  * Decode the inline files carried in a compute response into `ProcessedFile`s.
  *
  * Pure and synchronous: base64 items are decoded to binary, plain-text items are
- * passed through, and the archive path is derived from `subFolder` + name. Items
- * with no usable `data` are skipped. This is the half of file handling that both
- * public entry points share; it never touches the network and never throws.
+ * passed through, and the archive path is derived from `subFolder` + name.
+ * Degrades per-file like {@link fetchRemoteFiles}: an item with no usable `data`
+ * or with undecodable base64 is logged and skipped, never aborting the batch.
+ * This is the half of file handling that both public entry points share; it
+ * never touches the network and never throws.
  *
  * @param dataItems - `FileData` items from the compute response.
  * @returns The decoded files.
@@ -112,30 +114,40 @@ const decodeResponseFiles = (dataItems: FileData[]): ProcessedFile[] => {
 			// `decodeBase64ToBinary` already returns a correctly-bounded view;
 			// re-wrapping `.buffer` would discard its byteOffset/byteLength and
 			// expose the whole (possibly pooled) backing buffer as corrupt content.
-			processedFiles.push({
-				fileName,
-				content: decodeBase64ToBinary(item.data),
-				path: filePath
-			});
+			try {
+				processedFiles.push({
+					fileName,
+					content: decodeBase64ToBinary(item.data),
+					path: filePath
+				});
+			} catch (err) {
+				getLogger().warn(`Skipping file "${filePath}": base64 decode failed.`, err);
+			}
 		} else if (item.isBase64Encoded === false && item.data) {
 			processedFiles.push({
 				fileName,
 				content: item.data,
 				path: filePath
 			});
+		} else {
+			getLogger().warn(`Skipping file "${filePath}": item carries no usable data.`);
 		}
 	});
 
 	return processedFiles;
 };
 
+/** Abort a hung external-file fetch — one dead URL must degrade the batch, not stall it forever. */
+const REMOTE_FILE_TIMEOUT_MS = 30_000;
+
 /**
  * Fetch externally-referenced files over HTTP into `ProcessedFile`s.
  *
- * Async and fallible by nature. A failed fetch (network error or non-OK status)
- * is logged and that file is dropped — the rest still resolve — so one dead URL
- * degrades the result rather than aborting the whole batch. This swallow is
- * deliberate and pinned by tests; callers receive only the files that succeeded.
+ * Async and fallible by nature. A failed fetch (network error, non-OK status,
+ * or timeout after {@link REMOTE_FILE_TIMEOUT_MS}) is logged and that file is
+ * dropped — the rest still resolve — so one dead URL degrades the result rather
+ * than aborting the whole batch. This swallow is deliberate and pinned by
+ * tests; callers receive only the files that succeeded.
  *
  * @param refs - External file references to fetch.
  * @returns The successfully-fetched files (failures omitted).
@@ -144,7 +156,11 @@ const fetchRemoteFiles = async (refs: FileBaseInfo[]): Promise<ProcessedFile[]> 
 	const fetched = await Promise.all(
 		refs.map(async (file) => {
 			try {
-				const response = await fetch(file.filePath);
+				const signal =
+					typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+						? AbortSignal.timeout(REMOTE_FILE_TIMEOUT_MS)
+						: undefined;
+				const response = await fetch(file.filePath, { signal });
 				if (!response.ok) {
 					getLogger().warn(`Failed to fetch additional file from URL: ${file.filePath}`);
 					return null;
@@ -197,10 +213,16 @@ const processFiles = async (
 async function createAndDownloadZip(files: ProcessedFile[], zipName: string): Promise<void> {
 	const { zip, strToU8 } = await import('fflate');
 
-	// Convert files to fflate format
+	// Convert files to fflate format. Zip entries are keyed by path, so two
+	// files with the same path would silently overwrite each other — rename
+	// collisions ("model.txt" → "model-2.txt") instead of losing data.
 	const zipData: Record<string, Uint8Array> = {};
 	files.forEach((file) => {
-		zipData[file.path] = typeof file.content === 'string' ? strToU8(file.content) : file.content;
+		const path = uniqueZipPath(file.path, zipData);
+		if (path !== file.path) {
+			getLogger().warn(`Duplicate archive path "${file.path}" — storing as "${path}".`);
+		}
+		zipData[path] = typeof file.content === 'string' ? strToU8(file.content) : file.content;
 	});
 
 	// Async `zip` deflates on a worker thread instead of blocking the main thread
@@ -211,6 +233,24 @@ async function createAndDownloadZip(files: ProcessedFile[], zipName: string): Pr
 
 	const blob = new Blob([zipped as BlobPart], { type: 'application/zip' });
 	saveFile(blob, `${zipName}.zip`);
+}
+
+/**
+ * First archive path not already taken in `taken`, disambiguating with a
+ * numeric suffix before the extension: `dir/model.txt` → `dir/model-2.txt`.
+ */
+function uniqueZipPath(path: string, taken: Record<string, Uint8Array>): string {
+	const has = (p: string) => Object.prototype.hasOwnProperty.call(taken, p);
+	if (!has(path)) return path;
+	const slash = path.lastIndexOf('/');
+	const dot = path.lastIndexOf('.');
+	const stemEnd = dot > slash ? dot : path.length;
+	const stem = path.slice(0, stemEnd);
+	const ext = path.slice(stemEnd);
+	for (let i = 2; ; i++) {
+		const candidate = `${stem}-${i}${ext}`;
+		if (!has(candidate)) return candidate;
+	}
 }
 
 /**
@@ -231,9 +271,15 @@ function saveFile(blob: Blob, filename: string) {
 		);
 	}
 
+	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
-	a.href = URL.createObjectURL(blob);
+	a.href = url;
 	a.download = filename;
+	// Firefox requires the anchor to be in the DOM for the click to download.
+	document.body.appendChild(a);
 	a.click();
-	URL.revokeObjectURL(a.href);
+	a.remove();
+	// Revoking synchronously can abort the download in some browsers — the
+	// browser only pins the blob once the download has actually started.
+	setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

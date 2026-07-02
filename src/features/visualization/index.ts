@@ -51,7 +51,8 @@ export {
 	parseBinaryMeshBatch,
 	BINARY_MESH_MAGIC,
 	BINARY_MESH_VERSION,
-	FLAG_FLOAT32
+	FLAG_FLOAT32,
+	FLAG_DELTA_ENCODED
 } from './webdisplay/binary-parser';
 export type { BinaryMeshMetadata, ParsedBinaryMeshBatch } from './webdisplay/binary-parser';
 

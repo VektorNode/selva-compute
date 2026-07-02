@@ -43,20 +43,38 @@ export function isBase64(str: string): boolean {
  *
  * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
  *
+ * Input is normalized and validated per WHATWG forgiving-base64 (whitespace
+ * stripped, padding checked) BEFORE decoding, so both runtimes fail the same
+ * way: without this, Node's `Buffer.from(x, 'base64')` silently decodes
+ * malformed input into garbage while browser `atob` throws a bare
+ * `InvalidCharacterError` DOMException.
+ *
  * @param base64File - Base64 encoded string
  * @returns Decoded binary data as Uint8Array
- * @throws {RhinoComputeError} If base64 decoding is not supported in this environment.
+ * @throws {RhinoComputeError} `ENCODING_ERROR` if the input is not valid
+ *   base64, or `INVALID_STATE` if no decoder exists in this environment.
  */
 export function decodeBase64ToBinary(base64File: string): Uint8Array {
+	// Forgiving-base64 normalization: strip ASCII whitespace (wrapped /
+	// pretty-printed payloads), then drop trailing padding only where the spec
+	// allows it (total length a multiple of 4).
+	let data = base64File.replace(/[\t\n\f\r ]/g, '');
+	if (data.length % 4 === 0) data = data.replace(/={1,2}$/, '');
+	if (data.length % 4 === 1 || !/^[A-Za-z0-9+/]*$/.test(data)) {
+		throw new RhinoComputeError('Invalid base64 input.', ErrorCodes.ENCODING_ERROR, {
+			context: { inputLength: base64File.length }
+		});
+	}
+
 	// Prefer Buffer in Node — it's faster and avoids the latin-1 string detour
 	// that atob + charCodeAt requires.
 	const Buffer = getNodeBuffer();
 	if (Buffer) {
-		const buf = Buffer.from(base64File, 'base64');
+		const buf = Buffer.from(data, 'base64');
 		return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 	}
 	if (typeof globalThis.atob === 'function') {
-		const binary = globalThis.atob(base64File);
+		const binary = globalThis.atob(data);
 		const bytes = new Uint8Array(binary.length);
 		for (let i = 0; i < binary.length; i++) {
 			bytes[i] = binary.charCodeAt(i) & 0xff;
@@ -69,6 +87,42 @@ export function decodeBase64ToBinary(base64File: string): Uint8Array {
 		ErrorCodes.INVALID_STATE,
 		{ context: { environmentInfo: 'atob or Buffer not available' } }
 	);
+}
+
+/**
+ * UTF-8 byte length of a string (what actually goes over the wire), without
+ * allocating an encoded copy — `TextEncoder.encode` on a multi-MB request body
+ * would double its memory just to measure it.
+ *
+ * @internal Internal encoding helper — kept internal to `@selvajs/compute`.
+ */
+export function utf8ByteLength(str: string): number {
+	const Buffer = getNodeBuffer();
+	if (Buffer) {
+		return Buffer.byteLength(str, 'utf-8');
+	}
+	let bytes = 0;
+	for (let i = 0; i < str.length; i++) {
+		const code = str.charCodeAt(i);
+		if (code < 0x80) {
+			bytes += 1;
+		} else if (code < 0x800) {
+			bytes += 2;
+		} else if (
+			code >= 0xd800 &&
+			code <= 0xdbff &&
+			i + 1 < str.length &&
+			(str.charCodeAt(i + 1) & 0xfc00) === 0xdc00
+		) {
+			// Surrogate pair → one 4-byte code point; lone surrogates fall through
+			// to 3 bytes (the replacement-character encoding TextEncoder emits).
+			bytes += 4;
+			i++;
+		} else {
+			bytes += 3;
+		}
+	}
+	return bytes;
 }
 
 /**

@@ -29,11 +29,8 @@ export function readField<T = unknown>(obj: unknown, name: string): T | undefine
 	const record = obj as Record<string, unknown>;
 	if (name in record) return record[name] as T;
 
-	const lower = name.toLowerCase();
-	for (const key of Object.keys(record)) {
-		if (key.toLowerCase() === lower) return record[key] as T;
-	}
-	return undefined;
+	const key = lowerKeyMap(record).get(name.toLowerCase());
+	return key === undefined ? undefined : (record[key] as T);
 }
 
 /**
@@ -45,6 +42,27 @@ export function hasField(obj: unknown, name: string): boolean {
 	if (!obj || typeof obj !== 'object') return false;
 	const record = obj as Record<string, unknown>;
 	if (name in record) return true;
-	const lower = name.toLowerCase();
-	return Object.keys(record).some((key) => key.toLowerCase() === lower);
+	return lowerKeyMap(record).has(name.toLowerCase());
+}
+
+/**
+ * Per-object cache of `lowercased key → actual key`, so reading N fields off
+ * the same payload object costs one `Object.keys` scan instead of N. Keyed by
+ * object identity (WeakMap), which assumes payloads are immutable wire data —
+ * keys added to an object after its first read are not seen. First matching
+ * key wins, preserving the original linear-scan order.
+ */
+const lowerKeyCache = new WeakMap<object, Map<string, string>>();
+
+function lowerKeyMap(record: Record<string, unknown>): Map<string, string> {
+	let map = lowerKeyCache.get(record);
+	if (!map) {
+		map = new Map();
+		for (const key of Object.keys(record)) {
+			const lower = key.toLowerCase();
+			if (!map.has(lower)) map.set(lower, key);
+		}
+		lowerKeyCache.set(record, map);
+	}
+	return map;
 }
