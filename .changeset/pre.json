@@ -5,6 +5,7 @@
     "@selvajs/compute": "3.0.0"
   },
   "changesets": [
-    "core-hardening-fixes"
+    "core-hardening-fixes",
+    "mesh-uv-color-texture"
   ]
 }
