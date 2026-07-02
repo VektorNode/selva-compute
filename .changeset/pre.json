@@ -4,5 +4,7 @@
   "initialVersions": {
     "@selvajs/compute": "3.0.0"
   },
-  "changesets": []
+  "changesets": [
+    "core-hardening-fixes"
+  ]
 }
