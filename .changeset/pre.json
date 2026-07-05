@@ -6,6 +6,7 @@
   },
   "changesets": [
     "core-hardening-fixes",
-    "mesh-uv-color-texture"
+    "mesh-uv-color-texture",
+    "wasm-heap-memory-leak"
   ]
 }
