@@ -22,6 +22,12 @@ export interface MeshBatchBuilderOptions {
 	 * need exact roundtrips of arbitrary float values.
 	 */
 	forceFloat32?: boolean;
+	/**
+	 * Assigns the layer for mesh `m`. Defaults to `Layer/${m % 4}`, spreading meshes across four
+	 * layers. Override to pin every mesh to one layer (e.g. `() => 'Layer/0'`) when a test needs
+	 * meshes that share a material to also share a layer, so material-merging actually merges.
+	 */
+	layerFn?: (meshIndex: number) => string;
 }
 
 export interface BuiltMeshBatch {
@@ -60,7 +66,8 @@ export function buildMeshBatch(options: MeshBatchBuilderOptions): BuiltMeshBatch
 		vertsPerMesh,
 		sourceComponentId,
 		seed = 1,
-		forceFloat32 = false
+		forceFloat32 = false,
+		layerFn = (m) => `Layer/${m % 4}`
 	} = options;
 
 	if (materialCount < 1) throw new Error('materialCount must be >= 1');
@@ -115,7 +122,7 @@ export function buildMeshBatch(options: MeshBatchBuilderOptions): BuiltMeshBatch
 
 		const meta: MeshMetadata = {
 			name: `mesh_${m}`,
-			layer: `Layer/${m % 4}`,
+			layer: layerFn(m),
 			originalIndex: m,
 			vertexCount: vertsPerMesh,
 			indexCount: trianglesPerMesh * 3,

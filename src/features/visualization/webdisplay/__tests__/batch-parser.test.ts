@@ -10,8 +10,13 @@ const COORD_TRANSFORM_TOLERANCE = 1e-5;
 
 describe('parseMeshBatchObject', () => {
 	describe('merged path (mergeByMaterial=true)', () => {
-		it('produces one mesh per material group', async () => {
-			const { batch } = buildMeshBatch({ materialCount: 3, meshCount: 12, vertsPerMesh: 6 });
+		it('produces one mesh per material group when all meshes share a layer', async () => {
+			const { batch } = buildMeshBatch({
+				materialCount: 3,
+				meshCount: 12,
+				vertsPerMesh: 6,
+				layerFn: () => 'Layer/0'
+			});
 
 			const meshes = await parseMeshBatchObject(batch, {
 				mergeByMaterial: true,
@@ -19,6 +24,58 @@ describe('parseMeshBatchObject', () => {
 			});
 
 			expect(meshes).toHaveLength(3);
+		});
+
+		it('splits a material group by layer so meshes on different layers are not merged together', async () => {
+			// Two materials, and every mesh sits on a distinct layer (Layer/0..3, cycling). Material
+			// grouping alone would yield 2 merged meshes, but merging across layers would collapse
+			// meshes onto the first sibling's layer — the SceneManager groups by userData.layer, so
+			// that would show them under the wrong layer. Splitting by layer keeps them apart.
+			const { batch } = buildMeshBatch({
+				materialCount: 2,
+				meshCount: 8,
+				vertsPerMesh: 4,
+				layerFn: (m) => `Layer/${m % 4}`
+			});
+
+			const meshes = await parseMeshBatchObject(batch, {
+				mergeByMaterial: true,
+				applyTransforms: false
+			});
+
+			// 2 materials × 4 layers = 8 distinct (material, layer) buckets, each with one mesh.
+			const layers = meshes.map((m) => m.userData.layer as string).sort();
+			expect(new Set(layers).size).toBe(4);
+			// No merged object carries a sibling on a different layer.
+			for (const mesh of meshes) {
+				const mergedFrom = mesh.userData.mergedFrom as Array<{ layer: string }> | undefined;
+				for (const sibling of mergedFrom ?? []) {
+					expect(sibling.layer).toBe(mesh.userData.layer);
+				}
+			}
+		});
+
+		it('merges within a layer while keeping layers separate', async () => {
+			// One material, meshes split across exactly two layers → two merged meshes, one per layer.
+			const { batch } = buildMeshBatch({
+				materialCount: 1,
+				meshCount: 6,
+				vertsPerMesh: 4,
+				layerFn: (m) => (m % 2 === 0 ? 'Layer/A' : 'Layer/B')
+			});
+
+			const meshes = await parseMeshBatchObject(batch, {
+				mergeByMaterial: true,
+				applyTransforms: false
+			});
+
+			expect(meshes).toHaveLength(2);
+			const layers = meshes.map((m) => m.userData.layer as string).sort();
+			expect(layers).toEqual(['Layer/A', 'Layer/B']);
+			// Each merged mesh pulled in its 2 same-layer siblings (3 meshes per layer).
+			for (const mesh of meshes) {
+				expect(mesh.userData.mergedFrom).toHaveLength(2);
+			}
 		});
 
 		it('preserves total vertex and triangle counts', async () => {
@@ -68,7 +125,12 @@ describe('parseMeshBatchObject', () => {
 		});
 
 		it('populates userData with first-mesh metadata and mergedFrom for siblings', async () => {
-			const { batch } = buildMeshBatch({ materialCount: 1, meshCount: 4, vertsPerMesh: 3 });
+			const { batch } = buildMeshBatch({
+				materialCount: 1,
+				meshCount: 4,
+				vertsPerMesh: 3,
+				layerFn: () => 'Layer/0'
+			});
 
 			const meshes = await parseMeshBatchObject(batch, {
 				mergeByMaterial: true,
@@ -270,7 +332,12 @@ describe('parseMeshBatchObject', () => {
 
 describe('parseMeshBatch (JSON entry point)', () => {
 	it('parses a JSON-stringified DisplayBatch end-to-end', async () => {
-		const { batch } = buildMeshBatch({ materialCount: 2, meshCount: 6, vertsPerMesh: 4 });
+		const { batch } = buildMeshBatch({
+			materialCount: 2,
+			meshCount: 6,
+			vertsPerMesh: 4,
+			layerFn: () => 'Layer/0'
+		});
 
 		const meshes = await parseMeshBatch(JSON.stringify(batch), {
 			mergeByMaterial: true,
@@ -291,7 +358,12 @@ describe('parseMeshBatchBlob (binary entry point)', () => {
 	// reads materials/groups/sourceComponentId from the blob's embedded metadata
 	// rather than an outer JSON envelope.
 	it('parses raw blob bytes end-to-end, honoring the shared parsing options', async () => {
-		const { batch } = buildMeshBatch({ materialCount: 2, meshCount: 6, vertsPerMesh: 4 });
+		const { batch } = buildMeshBatch({
+			materialCount: 2,
+			meshCount: 6,
+			vertsPerMesh: 4,
+			layerFn: () => 'Layer/0'
+		});
 		const blob = decodeBase64ToBinary(batch.compressedData);
 
 		const meshes = await parseMeshBatchBlob(blob, {
