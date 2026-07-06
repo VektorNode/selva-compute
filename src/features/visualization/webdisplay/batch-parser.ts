@@ -10,6 +10,7 @@ import type {
 	DisplayBatch,
 	MaterialGroup,
 	MeshBatchParsingOptions,
+	MeshMetadata,
 	SerializableMaterial
 } from './types';
 
@@ -211,10 +212,29 @@ function buildMeshesFromParsed(
 	const meshes: THREE.Mesh[] = [];
 
 	for (const group of groups) {
-		if (mergeByMaterial && group.meshes.length > 1) {
-			const mergedMesh = createMergedMesh(group, worldVertices, parsed.indices, materials);
-			mergedMesh.userData.sourceComponentId = sourceComponentId ?? null;
-			meshes.push(mergedMesh);
+		if (mergeByMaterial) {
+			// Merge only meshes that share BOTH material and layer. The scene manager groups
+			// rendered objects by `userData.layer`, so merging across layers would collapse
+			// meshes onto whichever layer the first sibling happened to sit on. Splitting the
+			// material group by layer keeps the draw-call savings while preserving each layer.
+			for (const layerGroup of splitGroupByLayer(group)) {
+				if (layerGroup.meshes.length > 1) {
+					const mergedMesh = createMergedMesh(layerGroup, worldVertices, parsed.indices, materials);
+					mergedMesh.userData.sourceComponentId = sourceComponentId ?? null;
+					meshes.push(mergedMesh);
+				} else {
+					const individualMeshes = createIndividualMeshes(
+						layerGroup,
+						worldVertices,
+						parsed.indices,
+						materials
+					);
+					for (const mesh of individualMeshes) {
+						mesh.userData.sourceComponentId = sourceComponentId ?? null;
+					}
+					meshes.push(...individualMeshes);
+				}
+			}
 		} else {
 			const individualMeshes = createIndividualMeshes(
 				group,
@@ -318,6 +338,33 @@ function createMaterial(matData: SerializableMaterial): THREE.MeshPhysicalMateri
 // ============================================================================
 // MESH CONSTRUCTION
 // ============================================================================
+
+/**
+ * Splits a material group into sub-groups that share the same layer.
+ *
+ * The C# batcher groups meshes purely by material, but merging is only safe within a single layer
+ * (the scene manager groups by `userData.layer`). Iteration order is preserved so a group with a
+ * single layer yields exactly one sub-group identical to the input — the common case stays cheap
+ * and the merged mesh's first-mesh metadata is unchanged.
+ */
+function splitGroupByLayer(group: MaterialGroup): MaterialGroup[] {
+	const byLayer = new Map<string, MeshMetadata[]>();
+
+	for (const meshMeta of group.meshes) {
+		const layer = meshMeta.layer ?? '';
+		const bucket = byLayer.get(layer);
+		if (bucket) {
+			bucket.push(meshMeta);
+		} else {
+			byLayer.set(layer, [meshMeta]);
+		}
+	}
+
+	// Fast path: a single layer means no split — return the group untouched.
+	if (byLayer.size <= 1) return [group];
+
+	return Array.from(byLayer.values(), (meshes) => ({ materialId: group.materialId, meshes }));
+}
 
 /**
  * Creates a merged mesh from multiple meshes sharing the same material.
