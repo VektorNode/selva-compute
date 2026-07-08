@@ -5,6 +5,7 @@
     "@selvajs/compute": "3.0.0"
   },
   "changesets": [
+    "config-request-headers",
     "core-hardening-fixes",
     "mesh-uv-color-texture",
     "wasm-heap-memory-leak"
