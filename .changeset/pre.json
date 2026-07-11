@@ -5,6 +5,7 @@
     "@selvajs/compute": "3.0.0"
   },
   "changesets": [
+    "ci-npm-pages-fixes",
     "config-request-headers",
     "core-hardening-fixes",
     "mesh-uv-color-texture",
