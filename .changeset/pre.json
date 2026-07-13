@@ -8,6 +8,7 @@
     "ci-npm-pages-fixes",
     "config-request-headers",
     "core-hardening-fixes",
+    "long-cats-wish",
     "mesh-uv-color-texture",
     "wasm-heap-memory-leak"
   ]

@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 3.1.0-beta.5
+
+### Minor Changes
+
+- f98aa9c: Adding back pressure to the lib
+
 ## 3.1.0-beta.4
 
 ### Patch Changes
