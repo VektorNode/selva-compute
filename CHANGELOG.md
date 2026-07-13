@@ -1,5 +1,11 @@
 # @selvajs/compute
 
+## 3.1.0-beta.6
+
+### Minor Changes
+
+- 65690d7: Improved display theme defaults
+
 ## 3.1.0-beta.5
 
 ### Minor Changes
