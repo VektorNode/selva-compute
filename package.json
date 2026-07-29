@@ -94,7 +94,7 @@
 	},
 	"dependencies": {
 		"fflate": "^0.8.2",
-		"rhino3dm": "8.17.0"
+		"rhino3dm": "8.32.1"
 	},
 	"peerDependencies": {
 		"three": ">=0.179.0"
