@@ -1,15 +1,9 @@
-<!-- Badges -->
-<div align="center">
-
-[![npm version](https://img.shields.io/npm/v/@selvajs/compute.svg)](https://www.npmjs.com/package/@selvajs/compute)
-[![npm downloads](https://img.shields.io/npm/dm/@selvajs/compute.svg)](https://www.npmjs.com/package/@selvajs/compute)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
-[![GitHub Repository](https://img.shields.io/badge/GitHub-VektorNode/selva--compute-blue?logo=github)](https://github.com/VektorNode/selva-compute)
-
-</div>
-
+> [!WARNING]
+> **This package is deprecated.**
+> `@selvajs/compute` has moved to **[VektorNode/selva](https://github.com/VektorNode/selva)** and is no longer maintained here.
+> This repository is kept for archival purposes only — no further releases, fixes, or security patches.
+>
+> **Migrating:** see the migration notes in the new repo.
 # @selvajs/compute
 
 An intermediate-level TypeScript framework for building web applications with Rhino Compute and Grasshopper.
